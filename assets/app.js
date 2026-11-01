@@ -75,10 +75,7 @@
           tagline: item.tagline || `${title} Creative App`,
           desc: item.desc || `Open-source ${title} creative application.`,
           monogram: monogram,
-          gradient: gradient,
-          stage: item.stage || "READY",
-          web: item.web !== undefined ? item.web : true,
-          alt: item.alt || ""
+          gradient: gradient
         };
       }
 
@@ -135,13 +132,10 @@
         categoryName: categoryName,
         categoryTag: categoryTag,
         accentColor: palette.accent,
-        stage: "READY",
-        web: true,
         tagline: `${categoryName} Studio App`,
         desc: `High-performance self-hosted ${cleanTitle} creative tool.`,
         monogram: mono,
-        gradient: palette.grad,
-        alt: ""
+        gradient: palette.grad
       };
 
       dynamicAppMetaCache.set(key, meta);
@@ -591,9 +585,8 @@
           const matchTagline = meta.tagline.toLowerCase().includes(query);
           const matchDesc = meta.desc.toLowerCase().includes(query);
           const matchCategory = meta.categoryName.toLowerCase().includes(query);
-          const matchAlt = meta.alt ? meta.alt.toLowerCase().includes(query) : false;
           const matchVersions = (app.releases || []).some(r => r.tag.toLowerCase().includes(query));
-          return matchName || matchTagline || matchDesc || matchCategory || matchAlt || matchVersions;
+          return matchName || matchTagline || matchDesc || matchCategory || matchVersions;
         }
 
         return true;
