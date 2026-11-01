@@ -169,7 +169,9 @@ artcraft-hub/
 ├── Dockerfile          # Multi-stage build (caddy:2-alpine + python3 + supercronic)
 ├── docker-compose.yml  # Service definition with named volumes & Traefik labels
 ├── Caddyfile           # Caddy config: WASM headers, MIME types, transparent app rewrites
-├── index.html          # Polished dark-mode glassmorphism dashboard UI
+├── index.html          # Semantic, accessible HTML dashboard shell (~200 lines)
+├── styles.css          # Decoupled stylesheet covering ArtCraft Theme and Glass Theme
+├── app.js              # Decoupled client logic, DOM batching, and dynamic metadata
 ├── switch_api.py       # Python sidecar API for atomic release switching & sync control
 ├── sync.sh             # GitHub release sync & automated release pruning
 ├── fetch-icons.sh      # CLI helper to fetch official vector master icons from GitHub
@@ -177,9 +179,88 @@ artcraft-hub/
 ├── entrypoint.sh       # Container startup: init config, deploy UI, start API + cron + Caddy
 ├── config/
 │   └── apps.conf       # App list (volume-mounted at /config/apps.conf)
+├── previews/           # Bundled UI interface preview graphics (.webp)
+├── icons/              # Bundled app mascot icons (.webp)
 ├── screenshots/        # Dashboard theme screenshots
 ├── .env.example        # Environment variable template
 └── .dockerignore
+```
+
+---
+
+## 🧩 Dynamic App Architecture & Extensibility
+
+The hub is designed without hardcoded app counts or fixed 13-app constraints:
+
+### Adding New Applications
+Add any GitHub repository to `config/apps.conf` (e.g. `storytold/audiocraft` or `myorg/customcraft`):
+```bash
+echo "myorg/customcraft" >> config/apps.conf
+docker exec artcraft-hub sync.sh
+```
+The sync script automatically polls the latest release, downloads the WebAssembly archive (`*web*.zip`), symlinks `/data/{app}/current`, and regenerates `/data/manifest.json`.
+
+### Automatic Metadata & Category Inference
+For apps not pre-registered in the built-in catalog, the hub dynamically generates complete presentation metadata:
+- **Title Formatting**: Automatically formats slugs into title case (e.g. `audio-craft` → `AudioCraft`).
+- **Sequential Lineup Number (`num`)**: Dynamic numbering automatically continues after built-in apps (`14`, `15`, `16`...) so that badge numbers `[14]` and grid ordering stay in sequence.
+- **Intelligent Categorization**: Detects categories based on keywords in the app slug:
+  - `audio`, `sound`, `music`, `synth` → **Audio** tab (`AUDIO WORKBENCH`)
+  - `cad`, `3d`, `mesh`, `model` → **3D & CAD** tab (`3D WORKBENCH`)
+  - `doc`, `pdf`, `text`, `sheet`, `page` → **Documents** tab (`DOCUMENT STUDIO`)
+  - `vector`, `svg`, `draw`, `fig`, `ui` → **Vector & Design** tab (`VECTOR & DESIGN`)
+  - All others default to **Graphics & Photo**
+- **Accent Color & Gradient**: Deterministically selected from a vibrant color palette based on a hash of the app name, ensuring every newly added app has a consistent, distinctive accent color.
+
+### Icon Fallback System (3-Tier)
+1. **Local WebP Icon**: Checks `/icons/{app}.webp`.
+2. **Downloaded Vector Master SVG**: `fetch-icons.sh` automatically attempts to download `assets/app-icon/{app}.svg` from the repository root into `/data/icons/{app}.svg`.
+3. **Monogram / Mascot Fallback**: If no image file is found, displays a clean 2-letter uppercase monogram (e.g. `Au` for `AudioCraft`) or suite mascot inside a rounded gradient container matching the app's accent color. Broken image icons are never shown.
+
+### Preview Graphic Fallback System (3-Tier)
+1. **Local WebP Screenshot**: Checks `/previews/{app}.webp`. You can place your own high-resolution screenshots into `/data/previews/{app}.webp` at any time.
+2. **Official CDN Graphic**: Attempts to fetch the preview from the official CDN.
+3. **Vector Blueprint Fallback**: Renders an inline vector CAD workspace blueprint featuring window controls, geometric wireframes, and `<APP> WORKSPACE` labeled in the app's accent color.
+
+---
+
+## 🎨 Dual Theme Engine
+
+The hub features two fully decoupled themes switchable on-the-fly via the top navigation toggle:
+
+### 1. ArtCraft Studio Theme (`[data-theme="artcraft"]`)
+Inspired directly by [getartcraft.com/apps](https://getartcraft.com/apps):
+- **Continuous Architectural Grid**: 4-column matrix grid separated by fine 1px borders.
+- **Top Bar**: Numbered accent badge (`01`, `02`, `14`...) on the left, with uppercase category tag on the right.
+- **Overlapping Mascot Icon**: 52×52px rounded-square app icon overlapping the bottom seam of the preview image.
+- **Vertical Hierarchy**: Prominent bold white title directly beneath the mascot icon, subtle favorites pin on the right, description, and release pill row.
+- **Single-Version vs. Multi-Version Pills**:
+  - Single version installed: Subtle pill showing the active release tag with no chevron arrow that does not expand on click.
+  - Multiple versions installed: Expands into a dropdown menu to choose and switch installed versions.
+  - `UPDATED <DATE>` is displayed immediately to the right of the version pill.
+- **Explore Button**: Full-width bottom bar with `EXPLORE <APP> ↗` and interactive hover animation.
+- **Technical Section Headers**:
+  - Pinned Section: Uses `01 / PINNED APPS` with a dynamic count of pinned favorites.
+  - Main Section: Uses `02 / THE LINEUP` (or `01 / THE LINEUP` if no apps are pinned).
+- **Controls Toolbar**: Category filter pills and instant search placed directly below the header.
+
+### 2. Glass Theme (Classic Glassmorphism)
+- Frosted glass cards with ambient background lighting and glow effects.
+- **Proportional Badge Actions**: Category pill and favorites pin button share uniform **22px height**, fully rounded pill curvature (`var(--radius-full)`), and subtle translucent borders.
+
+---
+
+## 🚀 Live Container Deployment
+
+To update a running container with new dashboard code or preview assets without restarting:
+
+```bash
+docker cp index.html artcraft-hub:/data/index.html
+docker cp styles.css artcraft-hub:/data/styles.css
+docker cp app.js artcraft-hub:/data/app.js
+docker cp previews artcraft-hub:/data/previews
+docker cp Caddyfile artcraft-hub:/etc/caddy/Caddyfile
+docker exec artcraft-hub caddy reload --config /etc/caddy/Caddyfile
 ```
 
 ---

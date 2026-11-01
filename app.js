@@ -221,28 +221,88 @@
       }
     };
 
-    /* Helper: generate default metadata for any unknown app */
+    /* -------------------------------------------------------------
+       App Catalog & Dynamic Metadata Generator
+       ------------------------------------------------------------- */
+    const dynamicAppMetaCache = new Map();
+    let nextDynamicNum = Object.keys(APP_CATALOG).length + 1; // starts sequentially after catalog (14+)
+
+    const PALETTES = [
+      { accent: '#6366f1', grad: 'linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)' }, // Indigo
+      { accent: '#ec4899', grad: 'linear-gradient(135deg, #db2777 0%, #ec4899 100%)' }, // Pink
+      { accent: '#14b8a6', grad: 'linear-gradient(135deg, #0d9488 0%, #14b8a6 100%)' }, // Teal
+      { accent: '#f59e0b', grad: 'linear-gradient(135deg, #d97706 0%, #f59e0b 100%)' }, // Amber
+      { accent: '#8b5cf6', grad: 'linear-gradient(135deg, #7c3aed 0%, #8b5cf6 100%)' }, // Violet
+      { accent: '#06b6d4', grad: 'linear-gradient(135deg, #0891b2 0%, #06b6d4 100%)' }, // Cyan
+      { accent: '#10b981', grad: 'linear-gradient(135deg, #059669 0%, #10b981 100%)' }, // Emerald
+      { accent: '#f43f5e', grad: 'linear-gradient(135deg, #e11d48 0%, #f43f5e 100%)' }, // Rose
+    ];
+
     function getAppMeta(appName) {
-      const key = appName.toLowerCase();
+      const key = (appName || '').toLowerCase();
       if (APP_CATALOG[key]) return APP_CATALOG[key];
 
-      const cleanTitle = appName.charAt(0).toUpperCase() + appName.slice(1);
-      const mono = cleanTitle.substring(0, 2);
-      return {
-        num: "01",
+      if (dynamicAppMetaCache.has(key)) {
+        return dynamicAppMetaCache.get(key);
+      }
+
+      // Title formatting (supports camelCase, kebab-case, snake_case)
+      const cleanTitle = appName
+        .replace(/[-_]/g, ' ')
+        .replace(/([a-z])([A-Z])/g, '$1 $2')
+        .split(' ')
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+        .join('');
+
+      const mono = cleanTitle.substring(0, 2).toUpperCase();
+
+      // Intelligent category detection from keywords
+      let category = 'graphics';
+      let categoryName = 'Graphics & Photo';
+      let categoryTag = 'CREATIVE STUDIO';
+
+      if (/audio|sound|music|synth|voice|track/i.test(key)) {
+        category = 'audio';
+        categoryName = 'Audio';
+        categoryTag = 'AUDIO WORKBENCH';
+      } else if (/cad|3d|mesh|model|render|shape/i.test(key)) {
+        category = 'cad';
+        categoryName = '3D & CAD';
+        categoryTag = '3D WORKBENCH';
+      } else if (/doc|word|pdf|text|sheet|page|note|book|publish/i.test(key)) {
+        category = 'documents';
+        categoryName = 'Documents';
+        categoryTag = 'DOCUMENT STUDIO';
+      } else if (/vector|svg|draw|design|fig|ui|ux|layout|canvas/i.test(key)) {
+        category = 'vector';
+        categoryName = 'Vector & Design';
+        categoryTag = 'VECTOR & DESIGN';
+      }
+
+      // Deterministic palette selection by hashing app name
+      let hash = 0;
+      for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) & 0xffffffff;
+      const palette = PALETTES[Math.abs(hash) % PALETTES.length];
+
+      const assignedNum = String(nextDynamicNum++).padStart(2, '0');
+
+      const meta = {
+        num: assignedNum,
         title: cleanTitle,
-        category: "graphics",
-        categoryName: "Creative Tool",
-        categoryTag: cleanTitle.toUpperCase(),
-        alt: "",
-        accentColor: "#4e7bfb",
+        category: category,
+        categoryName: categoryName,
+        categoryTag: categoryTag,
+        accentColor: palette.accent,
         stage: "READY",
         web: true,
-        tagline: "WebAssembly Studio App",
-        desc: `High performance self-hosted ${cleanTitle} creative tool.`,
+        tagline: `${categoryName} Studio App`,
+        desc: `High-performance self-hosted ${cleanTitle} creative tool.`,
         monogram: mono,
-        gradient: "linear-gradient(135deg, #6366f1 0%, #06b6d4 100%)"
+        gradient: palette.grad
       };
+
+      dynamicAppMetaCache.set(key, meta);
+      return meta;
     }
 
     /* -------------------------------------------------------------
@@ -520,12 +580,18 @@
             </svg>
           `;
         default:
+          const fallbackMeta = getAppMeta(key);
           return `
             <svg viewBox="0 0 320 160" fill="none" xmlns="http://www.w3.org/2000/svg">
               <rect width="320" height="160" fill="#0d1017"/>
-              <circle cx="160" cy="80" r="40" fill="#4e7bfb" fill-opacity="0.15"/>
-              <path d="M140 105 L160 55 L180 105 Z" stroke="#4e7bfb" stroke-width="2" fill="none"/>
-              <text x="160" y="130" fill="#8a96a8" font-family="monospace" font-size="10" text-anchor="middle" font-weight="700">ARTCRAFT APP</text>
+              <rect x="0" y="0" width="320" height="22" fill="#131722"/>
+              <circle cx="14" cy="11" r="3" fill="#ef4444"/>
+              <circle cx="24" cy="11" r="3" fill="#f59e0b"/>
+              <circle cx="34" cy="11" r="3" fill="#10b981"/>
+              <line x1="0" y1="22" x2="320" y2="22" stroke="#1c2230" stroke-width="1"/>
+              <circle cx="160" cy="80" r="36" fill="${fallbackMeta.accentColor || '#4e7bfb'}" fill-opacity="0.12"/>
+              <path d="M142 102 L160 58 L178 102 Z" stroke="${fallbackMeta.accentColor || '#4e7bfb'}" stroke-width="2" fill="none"/>
+              <text x="160" y="128" fill="#8a96a8" font-family="monospace" font-size="9" text-anchor="middle" font-weight="700" letter-spacing="0.08em">${escapeHtml(fallbackMeta.title.toUpperCase())} WORKSPACE</text>
             </svg>
           `;
       }
