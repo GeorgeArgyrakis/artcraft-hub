@@ -26,8 +26,6 @@ COPY --from=downloader --chmod=755 /tmp/supercronic /usr/local/bin/supercronic
 
 # Dashboard template, assets, and scripts
 COPY             index.html       /usr/local/share/artcraft/index.html
-COPY             styles.css       /usr/local/share/artcraft/styles.css
-COPY             app.js           /usr/local/share/artcraft/app.js
 COPY             logo.svg         /usr/local/share/artcraft/logo.svg
 COPY             logo.png         /usr/local/share/artcraft/logo.png
 COPY             favicon.ico      /usr/local/share/artcraft/favicon.ico

@@ -38,15 +38,13 @@ elif [ -f "/usr/local/share/artcraft/index.html" ]; then
   echo "[INFO] Deployed ArtCraft Hub dashboard to /data/index.html"
 fi
 
-# Deploy bundled stylesheets and scripts
+# Deploy bundled assets, stylesheets and scripts
 mkdir -p /data/assets
-if [ -f "/usr/local/share/artcraft/styles.css" ]; then
-  cp /usr/local/share/artcraft/styles.css /data/styles.css
-  cp /usr/local/share/artcraft/styles.css /data/assets/styles.css
-fi
-if [ -f "/usr/local/share/artcraft/app.js" ]; then
-  cp /usr/local/share/artcraft/app.js /data/app.js
-  cp /usr/local/share/artcraft/app.js /data/assets/app.js
+if [ -d "/usr/local/share/artcraft/assets" ]; then
+  cp -r /usr/local/share/artcraft/assets/* /data/assets/ 2>/dev/null || true
+  # Backwards compatibility copies for /data/styles.css and /data/app.js
+  cp /usr/local/share/artcraft/assets/styles.css /data/styles.css 2>/dev/null || true
+  cp /usr/local/share/artcraft/assets/app.js /data/app.js 2>/dev/null || true
 fi
 
 # Deploy default favicon if not present

@@ -221,13 +221,14 @@ artcraft-hub/
 ├── docker-compose.yml  # Service definition with named volumes & ports
 ├── Caddyfile           # Caddy config: WASM headers, MIME types, transparent app rewrites
 ├── index.html          # Semantic, accessible HTML dashboard shell (~200 lines)
-├── styles.css          # Decoupled stylesheet covering ArtCraft Theme and Glass Theme
-├── app.js              # Decoupled client logic, DOM batching, and dynamic metadata
 ├── switch_api.py       # Python sidecar API for atomic release switching & sync control
 ├── sync.sh             # GitHub release sync & automated release pruning
 ├── fetch-icons.sh      # CLI helper to fetch official vector master icons from GitHub
 ├── fetch-release.sh    # CLI helper to download specific historical release tags
 ├── entrypoint.sh       # Container startup: init config, deploy UI, start API + cron + Caddy
+├── assets/
+│   ├── styles.css      # Decoupled stylesheet covering ArtCraft Theme and Glass Theme
+│   └── app.js          # Decoupled client logic, DOM batching, and dynamic metadata
 ├── config/
 │   ├── apps.conf       # App list (volume-mounted at /config/apps.conf)
 │   └── catalog.json    # App metadata catalog (volume-mounted at /config/catalog.json)
@@ -328,8 +329,8 @@ To update a running container with new dashboard code or preview assets without 
 
 ```bash
 docker cp index.html artcraft-hub:/data/index.html
-docker cp styles.css artcraft-hub:/data/styles.css
-docker cp app.js artcraft-hub:/data/app.js
+docker cp assets/styles.css artcraft-hub:/data/assets/styles.css
+docker cp assets/app.js artcraft-hub:/data/assets/app.js
 docker cp previews artcraft-hub:/data/previews
 docker cp Caddyfile artcraft-hub:/etc/caddy/Caddyfile
 docker exec artcraft-hub caddy reload --config /etc/caddy/Caddyfile
