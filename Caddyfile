@@ -1,0 +1,67 @@
+{
+    admin off
+    auto_https off
+}
+
+:80 {
+    root * /data
+
+    # Required headers for SharedArrayBuffer / WASM threads
+    header {
+        Cross-Origin-Opener-Policy "same-origin"
+        Cross-Origin-Embedder-Policy "require-corp"
+        Cross-Origin-Resource-Policy "cross-origin"
+        Cache-Control "no-cache"
+        -Server
+    }
+
+    # Correct MIME type for .wasm files
+    @wasm {
+        path *.wasm
+    }
+    header @wasm Content-Type "application/wasm"
+
+    # Serve .gz as gzip-encoded
+    @wasm_gz {
+        path *.wasm.gz
+    }
+    header @wasm_gz Content-Encoding gzip
+    header @wasm_gz Content-Type "application/wasm"
+
+    encode gzip
+
+    # Version-switch API — proxy to Python sidecar
+    handle /api/* {
+        reverse_proxy localhost:5000
+    }
+
+    # Fix wasm-bindgen crate prefix quirk: /{app}/app/snippets/* → /{app}/current/snippets/*
+    @snippet_quirk {
+        path_regexp snippet ^/([^/]+)/app/snippets/(.*)$
+    }
+    rewrite @snippet_quirk /{re.snippet.1}/current/snippets/{re.snippet.2}
+
+    # Transparent rewrite: /{app}/* → /{app}/current/*
+    # This makes the 'current' symlink transparent to the browser.
+    # Exclude root, API, assets, icons, previews, images, and favicon.
+    @app_rewrite {
+        not path /
+        not path /api*
+        not path /assets*
+        not path /icons*
+        not path /previews*
+        not path /images*
+        not path /favicon.ico
+        not path_regexp already ^/[^/]+/(current|releases)(/.*)?$
+        path_regexp app ^/([^/]+)(/.*)?$
+    }
+    rewrite @app_rewrite /{re.app.1}/current{re.app.2}
+
+    file_server {
+        index index.html
+    }
+
+    handle_errors {
+        respond "{http.error.status_code} {http.error.status_text}" {http.error.status_code}
+    }
+}

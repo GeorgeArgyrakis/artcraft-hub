@@ -1,0 +1,34 @@
+services:
+  artcraft-hub:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: artcraft-hub
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - artcraft-data:/data
+      - artcraft-config:/config
+    environment:
+      # GitHub token for higher API rate limits (optional but recommended)
+      GITHUB_TOKEN: ""
+      # Cron schedule for release checks (default: daily at midnight)
+      SYNC_CRON: "0 0 * * *"
+      # Timezone for cron (e.g. Europe/Athens)
+      TZ: "Europe/Athens"
+      # Maximum number of release versions to keep per app
+      MAX_RELEASES: "3"
+    healthcheck:
+      # Aligned with Traefik target port (change to 80 if app listens on 80)
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  artcraft-data:
+    driver: local
+  artcraft-config:
+    driver: local
