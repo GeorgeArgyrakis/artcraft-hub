@@ -2,6 +2,9 @@
 
 A self-hosted Docker container that automatically fetches the latest WebAssembly releases of ArtCraft apps from GitHub, serves them via **Caddy** with all headers required for WASM threads (`SharedArrayBuffer`), and presents them through a dark-themed dashboard.
 
+> [!NOTE]
+> **⚡ Vibe-Coded Project**: This repository was vibe-coded with AI. Built through rapid conversational prompting, iteration, and pure vibes. It runs like a charm in a self-hosted home lab setup, but please review scripts and configurations before deploying to critical production systems. Feedback, PRs, and good vibes are welcome!
+
 ---
 
 ## 📸 Screenshots
@@ -295,6 +298,19 @@ docker exec artcraft-hub caddy reload --config /etc/caddy/Caddyfile
   docker exec -it artcraft-hub fetch-release.sh storytold/photocraft v0.17.0
   ```
 - To configure how many versions are kept on disk, adjust `MAX_RELEASES` in `docker-compose.yml` (default: 3). Old inactive releases are pruned automatically.
+
+---
+
+## ⚡ Vibe-Coded Disclaimer
+
+> **Built with vibes & AI.**
+>
+> This project was developed through **vibe coding** with AI assistants—conceived, scaffolded, refined, and styled through conversational iteration and iterative experimentation.
+>
+> - **Tested & Functional**: Runs reliably in real-world self-hosted home lab environments (Docker, Traefik, Caddy reverse proxy, WASM multi-threading).
+> - **Pragmatic & Experimental**: Architectural patterns prioritize speed, elegance, and immediate practicality over corporate boilerplate.
+> - **Provided As-Is**: Provided without warranty of any kind. Always inspect the shell scripts, Dockerfiles, and environment files before running in production.
+> - **Contributions**: Issues, pull requests, suggestions, and good vibes are always welcome!
 
 ---
 
