@@ -4,6 +4,16 @@ A self-hosted Docker container that automatically fetches the latest WebAssembly
 
 ---
 
+## 📸 Screenshots
+
+### Glass Theme (Modern Card View)
+![ArtCraft Hub - Glass Theme](screenshots/dashboard-glass-theme.jpg)
+
+### ArtCraft Theme (Lineup & Showcase View)
+![ArtCraft Hub - ArtCraft Theme](screenshots/dashboard-artcraft-theme.jpg)
+
+---
+
 ## Overview
 
 | Component | Role |
@@ -167,6 +177,7 @@ artcraft-hub/
 ├── entrypoint.sh       # Container startup: init config, deploy UI, start API + cron + Caddy
 ├── config/
 │   └── apps.conf       # App list (volume-mounted at /config/apps.conf)
+├── screenshots/        # Dashboard theme screenshots
 ├── .env.example        # Environment variable template
 └── .dockerignore
 ```
