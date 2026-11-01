@@ -32,11 +32,61 @@ The setup uses **two named Docker volumes** so your downloaded apps and configur
 
 ---
 
-## Quick Start
+## Quick Start (Pre-built Image)
+
+You can run ArtCraft Hub immediately using the pre-built Docker image from the GitHub Container Registry without needing to clone or build the source code.
+
+### 1. Create a `docker-compose.yml`
+
+Create a `docker-compose.yml` file in your preferred directory:
+
+```yaml
+services:
+  artcraft-hub:
+    image: ghcr.io/georgeargyrakis/artcraft-hub:latest
+    container_name: artcraft-hub
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - artcraft-data:/data
+      - artcraft-config:/config
+    environment:
+      # Optional: GitHub token for higher API rate limits (5,000/hr vs 60/hr)
+      - GITHUB_TOKEN=
+      # Cron schedule for release checks (default: daily at midnight)
+      - SYNC_CRON=0 0 * * *
+      # Timezone for the cron schedule
+      - TZ=UTC
+      # Maximum number of release versions to retain per app
+      - MAX_RELEASES=3
+
+volumes:
+  artcraft-data:
+  artcraft-config:
+```
+
+### 2. Start the Hub
 
 ```bash
-# 1. Clone or download this repository
-git clone <your-repo-url> artcraft-hub
+docker compose up -d
+```
+
+### 3. Open in Browser
+
+Open **http://localhost:8080** (or your server's IP / reverse proxy domain).
+
+The first synchronization runs automatically in the background to fetch and unpack the WebAssembly applications; Caddy starts serving immediately, and apps will appear on the dashboard as they finish downloading.
+
+---
+
+## Building From Source
+
+If you want to modify dashboard templates, themes, or scripts locally, you can clone the repository and build the container yourself:
+
+```bash
+# 1. Clone this repository
+git clone https://github.com/GeorgeArgyrakis/artcraft-hub.git
 cd artcraft-hub
 
 # 2. Edit the app list (one GitHub org/repo per line)
@@ -53,8 +103,6 @@ docker compose --env-file .env up -d --build
 # 5. Open your browser
 open http://localhost:8080
 ```
-
-The first sync runs immediately in the background; Caddy starts serving right away. The dashboard at `/` will populate once the first sync completes.
 
 ---
 
@@ -170,7 +218,7 @@ To update Supercronic, change `SUPERCRONIC_VERSION` and `SUPERCRONIC_SHA1SUM` in
 ```
 artcraft-hub/
 ├── Dockerfile          # Multi-stage build (caddy:2-alpine + python3 + supercronic)
-├── docker-compose.yml  # Service definition with named volumes & Traefik labels
+├── docker-compose.yml  # Service definition with named volumes & ports
 ├── Caddyfile           # Caddy config: WASM headers, MIME types, transparent app rewrites
 ├── index.html          # Semantic, accessible HTML dashboard shell (~200 lines)
 ├── styles.css          # Decoupled stylesheet covering ArtCraft Theme and Glass Theme
