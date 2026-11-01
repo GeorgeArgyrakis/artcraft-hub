@@ -21,6 +21,17 @@
     }
     header @wasm Content-Type "application/wasm"
 
+    # Correct MIME type for .css and .js files
+    @css {
+        path *.css
+    }
+    header @css Content-Type "text/css; charset=utf-8"
+
+    @js {
+        path *.js
+    }
+    header @js Content-Type "text/javascript; charset=utf-8"
+
     # Serve .gz as gzip-encoded
     @wasm_gz {
         path *.wasm.gz
@@ -48,6 +59,8 @@
         not path /
         not path /styles.css
         not path /app.js
+        not path *.css
+        not path *.js
         not path /logo.svg
         not path /logo.png
         not path /favicon.ico

@@ -45,6 +45,13 @@
   <link rel="stylesheet" href="/assets/styles.css">
   <link rel="stylesheet" href="/styles.css">
 
+  <style>
+    /* Critical baseline styles to prevent FOUC / layout shift */
+    html { background: #0c0d12; color: #f8fafc; }
+    .search-icon { width: 14px !important; height: 14px !important; max-width: 14px; max-height: 14px; }
+    svg { max-width: 100%; }
+  </style>
+
   <!-- Decoupled Application Logic -->
   <script src="/assets/app.js" defer></script>
 </head>
