@@ -1,5 +1,6 @@
 services:
   artcraft-hub:
+    image: ghcr.io/georgeargyrakis/artcraft-hub:latest
     build:
       context: .
       dockerfile: Dockerfile
