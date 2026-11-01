@@ -114,17 +114,7 @@
       </div>
     </header>
 
-    <!-- ArtCraft Technical Subnav Header Bar (ArtCraft Theme) -->
-    <div class="artcraft-subnav-bar">
-      <div class="artcraft-subnav-col">
-        <span class="artcraft-subnav-num">01 / CRAFTING APPS</span>
-      </div>
-      <div class="artcraft-subnav-col right">
-        <span class="artcraft-subnav-meta">THIRTEEN APPS &bull; OPEN SOURCE &bull; PURE RUST</span>
-      </div>
-    </div>
-
-    <!-- Controls Toolbar (Search & Filter) -->
+    <!-- Controls Toolbar (Search & Filter) — Positioned directly below header -->
     <div class="toolbar-container" role="toolbar" aria-label="Tool Filtering and Search">
       <!-- Category Filter Pills -->
       <div class="category-pills" id="category-pills" role="tablist" aria-label="Categories">
@@ -167,29 +157,42 @@
 
     <!-- Pinned Section -->
     <section class="section-container" id="pinned-section" style="display: none;" aria-labelledby="pinned-title">
+      <!-- Glass Theme Grid Section Header -->
       <div class="grid-section-header">
         <div class="section-heading">
           <h2 class="section-title" id="pinned-title">Pinned</h2>
           <span class="section-badge" id="pinned-badge-count">0</span>
         </div>
       </div>
+
+      <!-- ArtCraft Theme Grid Section Header -->
+      <div class="artcraft-subnav-bar">
+        <div class="artcraft-subnav-col">
+          <span class="artcraft-subnav-num" id="artcraft-pinned-num">01 / PINNED APPS</span>
+        </div>
+        <div class="artcraft-subnav-col right">
+          <span class="artcraft-subnav-meta" id="artcraft-pinned-meta">FAVORITES</span>
+        </div>
+      </div>
+
       <div class="apps-grid" id="pinned-grid"></div>
     </section>
 
-    <!-- The Lineup Technical Header (ArtCraft Theme) -->
-    <div class="artcraft-lineup-bar">
-      <span class="artcraft-lineup-title">02 / THE LINEUP</span>
-      <span class="artcraft-lineup-action">PICK A CRAFT TO EXPLORE</span>
-    </div>
-
     <!-- Main All Tools Section -->
     <section class="section-container" id="main-section" aria-labelledby="main-section-title">
+      <!-- Glass Theme Grid Section Header -->
       <div class="grid-section-header">
         <div class="section-heading">
           <h2 class="section-title" id="main-section-title">All Applications</h2>
           <span class="section-badge" id="main-badge-count">0</span>
         </div>
         <div class="grid-count" id="grid-status-count">Loading applications...</div>
+      </div>
+
+      <!-- ArtCraft Theme Grid Section Header -->
+      <div class="artcraft-lineup-bar">
+        <span class="artcraft-lineup-title" id="artcraft-lineup-title">02 / THE LINEUP</span>
+        <span class="artcraft-lineup-action" id="artcraft-lineup-action">PICK A CRAFT TO EXPLORE</span>
       </div>
 
       <div class="apps-grid" id="apps-grid">

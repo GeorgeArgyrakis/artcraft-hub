@@ -812,7 +812,6 @@
                   </svg>
                 </a>
                 <div class="card-badge-actions" style="display: flex; align-items: center; gap: 0.45rem;">
-                  ${meta.alt ? `<span class="app-alt-pill">${escapeHtml(meta.alt)}</span>` : ''}
                   <span class="app-category-pill">${meta.categoryName}</span>
                   <button class="btn-pin ${isPinned ? 'pinned' : ''}" id="pin-${appInfo.app}" title="${isPinned ? 'Unpin from favorites' : 'Pin to favorites'}">
                     <svg viewBox="0 0 24 24" fill="${isPinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1007,18 +1006,29 @@
         unpinnedList.sort((a, b) => getAppMeta(a.app).title.localeCompare(getAppMeta(b.app).title));
       }
 
-      // Update global count
+      // Update global count & ArtCraft section headers
       gridStatusCount.textContent = `Showing ${filtered.length} of ${rawApps.length} creative tools`;
+      const pinnedMeta = document.getElementById('artcraft-pinned-meta');
+      const lineupTitle = document.getElementById('artcraft-lineup-title');
 
       // 1. Pinned Favorites Section (top)
       if (pinnedList.length > 0) {
         pinnedSection.style.display = 'block';
         pinnedBadgeCount.textContent = pinnedList.length;
+        if (pinnedMeta) {
+          pinnedMeta.textContent = `${pinnedList.length} ${pinnedList.length === 1 ? 'APP' : 'APPS'} PINNED`;
+        }
+        if (lineupTitle) {
+          lineupTitle.textContent = '02 / THE LINEUP';
+        }
         const pinnedFragment = document.createDocumentFragment();
         pinnedList.forEach(app => pinnedFragment.appendChild(buildAppCard(app)));
         pinnedGrid.appendChild(pinnedFragment);
       } else {
         pinnedSection.style.display = 'none';
+        if (lineupTitle) {
+          lineupTitle.textContent = '01 / THE LINEUP';
+        }
       }
 
       // 2. Main Tools Section (bottom)
@@ -1027,6 +1037,9 @@
         mainSection.style.display = 'none';
         if (pinnedList.length === 0) {
           pinnedSection.style.display = 'block';
+          if (pinnedMeta) {
+            pinnedMeta.textContent = '0 APPS PINNED';
+          }
           pinnedGrid.innerHTML = `
             <div class="empty-state">
               <div class="empty-icon">📌</div>

@@ -43,17 +43,19 @@
 
     # Transparent rewrite: /{app}/* → /{app}/current/*
     # This makes the 'current' symlink transparent to the browser.
-    # Exclude root, API, assets, icons, previews, images, and favicon.
+    # Exclude hub root assets, API, and static directories.
     @app_rewrite {
         not path /
+        not path /styles.css
+        not path /app.js
+        not path /logo.svg
+        not path /logo.png
+        not path /favicon.ico
         not path /api*
         not path /assets*
         not path /icons*
         not path /previews*
         not path /images*
-        not path /favicon.ico
-        not path *.css
-        not path *.js
         not path_regexp already ^/[^/]+/(current|releases)(/.*)?$
         path_regexp app ^/([^/]+)(/.*)?$
     }
