@@ -34,11 +34,14 @@ elif [ -f "/usr/local/share/artcraft/index.html" ]; then
 fi
 
 # Deploy bundled stylesheets and scripts
+mkdir -p /data/assets
 if [ -f "/usr/local/share/artcraft/styles.css" ]; then
   cp /usr/local/share/artcraft/styles.css /data/styles.css
+  cp /usr/local/share/artcraft/styles.css /data/assets/styles.css
 fi
 if [ -f "/usr/local/share/artcraft/app.js" ]; then
   cp /usr/local/share/artcraft/app.js /data/app.js
+  cp /usr/local/share/artcraft/app.js /data/assets/app.js
 fi
 
 # Deploy default favicon if not present
