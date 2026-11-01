@@ -33,6 +33,14 @@ elif [ -f "/usr/local/share/artcraft/index.html" ]; then
   echo "[INFO] Deployed ArtCraft Hub dashboard to /data/index.html"
 fi
 
+# Deploy bundled stylesheets and scripts
+if [ -f "/usr/local/share/artcraft/styles.css" ]; then
+  cp /usr/local/share/artcraft/styles.css /data/styles.css
+fi
+if [ -f "/usr/local/share/artcraft/app.js" ]; then
+  cp /usr/local/share/artcraft/app.js /data/app.js
+fi
+
 # Deploy default favicon if not present
 if [ ! -f "/data/favicon.ico" ] && [ -f "/usr/local/share/artcraft/favicon.ico" ]; then
   cp /usr/local/share/artcraft/favicon.ico /data/favicon.ico

@@ -52,6 +52,8 @@
         not path /previews*
         not path /images*
         not path /favicon.ico
+        not path *.css
+        not path *.js
         not path_regexp already ^/[^/]+/(current|releases)(/.*)?$
         path_regexp app ^/([^/]+)(/.*)?$
     }
