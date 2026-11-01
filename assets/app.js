@@ -359,43 +359,6 @@
       `;
     }
 
-    function getAppMascotSvg(app) {
-      const key = (app || '').toLowerCase();
-      switch (key) {
-        case 'photocraft':
-          return `<svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M12 2L9 9H15L12 2ZM4 7L2 14L8 12L4 7ZM20 7L16 12L22 14L20 7ZM6 13L9 16L12 14L15 16L18 13L15 22L12 18L9 22L6 13Z"/></svg>`;
-        case 'vectorcraft':
-          return `<svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M12 2C8 4 6 8 6 12C6 16 10 20 12 22C14 20 18 16 18 12C18 8 16 4 12 2ZM10 9C10.55 9 11 9.45 11 10C11 10.55 10.55 11 10 11C9.45 11 9 10.55 9 10C9 9.45 9.45 9 10 9ZM14 9C14.55 9 15 9.45 15 10C15 10.55 14.55 11 14 11C13.45 11 13 10.55 13 10C13 9.45 13.45 9 14 9ZM12 17C10.5 17 9.5 15.5 9.5 15.5H14.5C14.5 15.5 13.5 17 12 17Z"/></svg>`;
-        case 'filmcraft':
-          return `<svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><circle cx="8" cy="11" r="3"/><circle cx="16" cy="11" r="3"/><path d="M12 14L11 16H13L12 14Z"/><path d="M12 3C7 3 4 7 4 13C4 18 8 21 12 21C16 21 20 18 20 13C20 7 17 3 12 3ZM12 19C9 19 6 16.5 6 13C6 9 8 5 12 5C16 5 18 9 18 13C18 16.5 15 19 12 19Z"/></svg>`;
-        case 'lightcraft':
-          return `<svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M4 4L7 11L10 9L12 11L14 9L17 11L20 4L18 14C18 18 15 21 12 21C9 21 6 18 6 14L4 4Z"/></svg>`;
-        case 'pdfcraft':
-          return `<svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M12 2L4 9L7 11L12 7L17 11L20 9L12 2ZM12 9L2 14L6 16L12 12L18 16L22 14L12 9ZM12 14L8 18L12 22L16 18L12 14Z"/></svg>`;
-        case 'effectcraft':
-          return `<svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5L12 2Z"/></svg>`;
-        case 'designcraft':
-          return `<svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M12 4C10 2 6 2 4 4C2 6 2 10 4 13C6 16 11 19 12 21C13 19 18 16 20 13C22 10 22 6 20 4C18 2 14 2 12 4ZM11 11H5C4.5 11 4 9 5 8C6 7 9 7 11 9V11ZM13 11V9C15 7 18 7 19 8C20 9 19.5 11 19 11H13Z"/></svg>`;
-        case 'figcraft':
-          return `<svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M12 3C7 3 3 7 3 12C3 17 7 21 12 21C16 21 19 18 20 14L17 14C16.5 16.5 14.5 18 12 18C8.7 18 6 15.3 6 12C6 8.7 8.7 6 12 6C14 6 16 7 17 9H13V12H21V3H18L16.5 5C15 3.8 13.5 3 12 3Z"/></svg>`;
-        case 'wordcraft':
-          return `<svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.9 22 6 22H18C19.1 22 20 21.1 20 20V8L14 2ZM16 18H8V16H16V18ZM16 14H8V12H16V14ZM13 9V3.5L18.5 9H13Z"/></svg>`;
-        case 'soundcraft':
-          return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="22" height="22"><path d="M16 7a4 4 0 0 0-7 2.5v1.5L5 13l4 1v4l3-2 4 1a7 7 0 0 0 5-6.5C21 7.5 18.5 7 16 7z"/><path d="M6 8a4 4 0 0 0 0 6"/><path d="M3 6a8 8 0 0 0 0 10"/><circle cx="15" cy="10" r="1" fill="currentColor"/></svg>`;
-        case 'deckcraft':
-          return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="22" height="22"><rect x="3" y="3" width="18" height="12" rx="2"/><path d="M7 11v-2"/><path d="M11 11V7"/><path d="M15 11V5"/><path d="M12 15v4"/><path d="M8 21h8"/></svg>`;
-        case 'cadcraft':
-          return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="22" height="22"><polygon points="4,4 4,20 20,20"/><polygon points="7,13 7,17 11,17"/><path d="M13 7a7 7 0 0 1 7 7"/></svg>`;
-        case 'gridcraft':
-          return `<svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M3 3V21H21V3H3ZM9 9H5V5H9V9ZM15 9H11V5H15V9ZM19 9H17V5H19V9ZM9 15H5V11H9V15ZM15 15H11V11H15V15ZM19 15H17V11H19V15ZM9 19H5V17H9V19ZM15 19H11V17H15V19ZM19 19H17V17H19V19Z"/></svg>`;
-        case 'craft-anything':
-        case 'craftanything':
-          return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="22" height="22"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>`;
-        default:
-          return `<svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><polygon points="12,2 2,22 22,22"/></svg>`;
-      }
-    }
-
     /* -------------------------------------------------------------
        State Management
        ------------------------------------------------------------- */
@@ -542,7 +505,6 @@
       card.dataset.app = appInfo.app;
       card.dataset.category = meta.category;
 
-      const mascotSvg = getAppMascotSvg(appInfo.app);
 
       if (currentTheme === 'artcraft') {
         const previewSvg = getAppPreviewSvg(appInfo.app);
@@ -575,7 +537,7 @@
                   <img src="/icons/${appInfo.app}.webp" alt="${meta.title} Icon" class="app-icon-img"
                        onerror="if (this.dataset.triedSvg !== 'true') { this.dataset.triedSvg = 'true'; this.src = '/icons/${appInfo.app}.svg'; } else { this.style.display='none'; this.nextElementSibling.style.display='flex'; }">
                   <div class="app-icon-fallback" style="background: ${meta.gradient}; display: none;">
-                    ${mascotSvg || meta.monogram}
+                    ${meta.monogram}
                   </div>
                 </div>
               </a>
@@ -628,7 +590,7 @@
                 <img src="/icons/${appInfo.app}.webp" alt="${meta.title} Icon" class="app-icon-img"
                      onerror="if (this.dataset.triedSvg !== 'true') { this.dataset.triedSvg = 'true'; this.src = '/icons/${appInfo.app}.svg'; } else { this.style.display='none'; this.nextElementSibling.style.display='flex'; }">
                 <div class="app-icon-fallback" style="background: ${meta.gradient}; display: none;">
-                  ${mascotSvg || meta.monogram}
+                  ${meta.monogram}
                 </div>
               </div>
             </a>
