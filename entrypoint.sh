@@ -55,6 +55,14 @@ if [ -d "/usr/local/share/artcraft/previews" ]; then
   echo "[INFO] Deployed bundled preview graphics to /data/previews"
 fi
 
+# Deploy bundled application icons if present
+if [ -d "/usr/local/share/artcraft/icons" ]; then
+  mkdir -p /data/icons /data/assets/icons
+  cp -r /usr/local/share/artcraft/icons/* /data/icons/ 2>/dev/null || true
+  cp -r /usr/local/share/artcraft/icons/* /data/assets/icons/ 2>/dev/null || true
+  echo "[INFO] Deployed bundled application icons to /data/icons"
+fi
+
 # Write supercronic crontab from env
 mkdir -p /etc/supercronic
 echo "${CRON_SCHEDULE} /usr/local/bin/sync.sh >> /proc/1/fd/1 2>&1" > "${CRONTAB_FILE}"

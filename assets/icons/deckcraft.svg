@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <clipPath id="deckcraft-squircle">
+      <rect width="512" height="512" rx="115" ry="115"/>
+    </clipPath>
+    <linearGradient id="deckcraft-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ea580c"/>
+      <stop offset="100%" stop-color="#f97316"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Squircle Base Field -->
+  <rect width="512" height="512" rx="115" ry="115" fill="url(#deckcraft-bg)"/>
+
+  <!-- Content clipped to squircle -->
+  <g clip-path="url(#deckcraft-squircle)">
+    <!-- Stand / Easel Legs -->
+    <path d="M 238 340 L 238 418 L 175 418 C 165 418 160 426 160 435 C 160 444 165 450 175 450 L 337 450 C 347 450 352 444 352 435 C 352 426 347 418 337 418 L 274 418 L 274 340 Z" 
+          fill="#0b0b0c"/>
+
+    <!-- Display Bezel / Screen Outer Shell -->
+    <rect x="76" y="90" width="360" height="252" rx="28" fill="#0b0b0c"/>
+
+    <!-- Screen Canvas (Warm Parchment Paper) -->
+    <rect x="94" y="108" width="324" height="216" rx="16" fill="#efe9dc"/>
+
+    <!-- Presentation Header Rule & Meta Line -->
+    <rect x="124" y="136" width="140" height="18" rx="6" fill="#0b0b0c"/>
+    <rect x="274" y="138" width="40" height="14" rx="4" fill="#ea580c"/>
+
+    <!-- Slide Metrics: Pie / Donut Chart -->
+    <circle cx="348" cy="184" r="28" fill="#0b0b0c"/>
+    <circle cx="348" cy="184" r="14" fill="#efe9dc"/>
+    <path d="M 348 156 A 28 28 0 0 1 376 184 L 362 184 A 14 14 0 0 0 348 170 Z" fill="#ea580c"/>
+
+    <!-- Slide Metrics: Professional Bar Chart -->
+    <!-- Axis Baseline -->
+    <line x1="124" y1="294" x2="388" y2="294" stroke="#0b0b0c" stroke-width="8" stroke-linecap="round"/>
+
+    <!-- Bar 1 (Short - Orange) -->
+    <rect x="142" y="234" width="44" height="54" rx="6" fill="#ea580c"/>
+
+    <!-- Bar 2 (Medium - Ink) -->
+    <rect x="206" y="194" width="44" height="94" rx="6" fill="#0b0b0c"/>
+
+    <!-- Bar 3 (Tall - Orange) -->
+    <rect x="270" y="162" width="44" height="126" rx="6" fill="#ea580c"/>
+  </g>
+</svg>

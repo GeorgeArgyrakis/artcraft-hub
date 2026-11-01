@@ -32,6 +32,7 @@ COPY             logo.svg         /usr/local/share/artcraft/logo.svg
 COPY             logo.png         /usr/local/share/artcraft/logo.png
 COPY             favicon.ico      /usr/local/share/artcraft/favicon.ico
 COPY             config/apps.conf /usr/local/share/artcraft/apps.conf
+COPY             icons            /usr/local/share/artcraft/icons
 COPY             previews         /usr/local/share/artcraft/previews
 COPY --chmod=755 sync.sh          /usr/local/bin/sync.sh
 COPY --chmod=755 entrypoint.sh    /usr/local/bin/entrypoint.sh

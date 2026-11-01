@@ -29,11 +29,15 @@ fetch_single_icon() {
 
   echo "Fetching official icon for ${app} from ${repo_path}..."
 
-  # Candidate URLs on GitHub: HEAD, main, master
+  # Candidate URLs on GitHub: master SVG and Linux desktop icon themes
   local urls=(
     "https://raw.githubusercontent.com/${repo_path}/HEAD/assets/app-icon/${app}.svg"
     "https://raw.githubusercontent.com/${repo_path}/main/assets/app-icon/${app}.svg"
     "https://raw.githubusercontent.com/${repo_path}/master/assets/app-icon/${app}.svg"
+    "https://raw.githubusercontent.com/${repo_path}/HEAD/assets/app-icon/hicolor/scalable/apps/ai.storyteller.${app}.svg"
+    "https://raw.githubusercontent.com/${repo_path}/main/assets/app-icon/hicolor/scalable/apps/ai.storyteller.${app}.svg"
+    "https://raw.githubusercontent.com/${repo_path}/HEAD/assets/app-icon/hicolor/scalable/apps/${app}.svg"
+    "https://raw.githubusercontent.com/${repo_path}/main/assets/app-icon/hicolor/scalable/apps/${app}.svg"
   )
 
   local success=false

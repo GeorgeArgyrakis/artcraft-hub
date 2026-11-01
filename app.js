@@ -619,11 +619,11 @@
         case 'wordcraft':
           return `<svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.9 22 6 22H18C19.1 22 20 21.1 20 20V8L14 2ZM16 18H8V16H16V18ZM16 14H8V12H16V14ZM13 9V3.5L18.5 9H13Z"/></svg>`;
         case 'soundcraft':
-          return `<svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M3 10V14H5V10H3ZM7 7V17H9V7H7ZM11 3V21H13V3H11ZM15 7V17H17V7H15ZM19 10V14H21V10H19Z"/></svg>`;
+          return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="22" height="22"><path d="M16 7a4 4 0 0 0-7 2.5v1.5L5 13l4 1v4l3-2 4 1a7 7 0 0 0 5-6.5C21 7.5 18.5 7 16 7z"/><path d="M6 8a4 4 0 0 0 0 6"/><path d="M3 6a8 8 0 0 0 0 10"/><circle cx="15" cy="10" r="1" fill="currentColor"/></svg>`;
         case 'deckcraft':
-          return `<svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M19 3H5C3.9 3 3 3.9 3 5V15C3 16.1 3.9 17 5 17H11V19H8V21H16V19H13V17H19C20.1 17 21 16.1 21 15V5C21 3.9 20.1 3 19 3ZM19 15H5V5H19V15ZM10 7L15 10L10 13V7Z"/></svg>`;
+          return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="22" height="22"><rect x="3" y="3" width="18" height="12" rx="2"/><path d="M7 11v-2"/><path d="M11 11V7"/><path d="M15 11V5"/><path d="M12 15v4"/><path d="M8 21h8"/></svg>`;
         case 'cadcraft':
-          return `<svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M12 2C10.9 2 10 2.9 10 4C10 4.4 10.1 4.8 10.4 5.1L5.5 19.3L7.4 20L11 9.5V11H13V9.5L16.6 20L18.5 19.3L13.6 5.1C13.9 4.8 14 4.4 14 4C14 2.9 13.1 2 12 2Z"/></svg>`;
+          return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="22" height="22"><polygon points="4,4 4,20 20,20"/><polygon points="7,13 7,17 11,17"/><path d="M13 7a7 7 0 0 1 7 7"/></svg>`;
         case 'gridcraft':
           return `<svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M3 3V21H21V3H3ZM9 9H5V5H9V9ZM15 9H11V5H15V9ZM19 9H17V5H19V9ZM9 15H5V11H9V15ZM15 15H11V11H15V15ZM19 15H17V11H19V15ZM9 19H5V17H9V19ZM15 19H11V17H15V19ZM19 19H17V17H19V19Z"/></svg>`;
         default:
@@ -860,8 +860,8 @@
           <div class="card-top">
             <a href="/${appInfo.app}/" class="app-icon-link" target="_blank" rel="noopener" title="Launch ${meta.title}">
               <div class="app-icon-slot" style="background: ${meta.accentColor || '#2563eb'};">
-                <img src="/icons/${appInfo.app}.svg" alt="${meta.title} Icon" class="app-icon-img"
-                     onerror="if (this.dataset.triedWebp !== 'true') { this.dataset.triedWebp = 'true'; this.src = '/icons/${appInfo.app}.webp'; } else { this.style.display='none'; this.nextElementSibling.style.display='flex'; }">
+                <img src="/icons/${appInfo.app}.webp" alt="${meta.title} Icon" class="app-icon-img"
+                     onerror="if (this.dataset.triedSvg !== 'true') { this.dataset.triedSvg = 'true'; this.src = '/icons/${appInfo.app}.svg'; } else { this.style.display='none'; this.nextElementSibling.style.display='flex'; }">
                 <div class="app-icon-fallback" style="background: ${meta.gradient}; display: none;">
                   ${mascotSvg || meta.monogram}
                 </div>
