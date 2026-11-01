@@ -3,8 +3,9 @@
 switch_api.py – Version-switch and System Control HTTP API for ArtCraft Hub.
 
 Endpoints:
-  GET  /api/manifest           → combined manifest of all apps + system status
+  GET  /api/manifest           → combined manifest of all apps + system status + catalog
   GET  /api/status             → system sync status and stats
+  GET  /api/catalog            → applications catalog metadata
   POST /api/sync               → trigger background sync of releases
   GET  /api/{app}/versions     → versions.json for a single app
   POST /api/{app}/switch/{tag} → atomically switch active release
@@ -25,6 +26,9 @@ TARGET_DIR = os.environ.get("TARGET_DIR", "/data")
 SYNC_LOCK_FILE = Path("/tmp/sync.lock")
 STATUS_FILE = Path(TARGET_DIR) / ".sync_status.json"
 PINNED_FILE = Path(TARGET_DIR) / "pinned.json"
+CATALOG_FILE = Path(os.environ.get("CATALOG_FILE", "/config/catalog.json"))
+BUNDLED_CATALOG_FILE = Path("/usr/local/share/artcraft/catalog.json")
+LOCAL_CATALOG_FILE = Path(__file__).resolve().parent / "config" / "catalog.json"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -175,12 +179,22 @@ def set_pinned(pinned_list):
     return {"ok": True, "pinned": cleaned}
 
 
+def get_catalog():
+    """Return catalog dictionary from user config, bundled share, or local repository."""
+    for path in (CATALOG_FILE, BUNDLED_CATALOG_FILE, LOCAL_CATALOG_FILE):
+        if path.is_file():
+            data = read_json(path)
+            if isinstance(data, dict):
+                return data
+    return {}
+
+
 def get_manifest():
     """Scan TARGET_DIR and return combined manifest dict."""
     base = Path(TARGET_DIR)
     apps = []
     if not base.is_dir():
-        return {"apps": apps, "system": get_status(), "pinned": get_pinned()}
+        return {"apps": apps, "system": get_status(), "pinned": get_pinned(), "catalog": get_catalog()}
     for app_dir in sorted(base.iterdir()):
         if not app_dir.is_dir():
             continue
@@ -194,7 +208,7 @@ def get_manifest():
             "active": data.get("active", ""),
             "releases": sorted_releases_newest_first(releases),
         })
-    return {"apps": apps, "system": get_status(), "pinned": get_pinned()}
+    return {"apps": apps, "system": get_status(), "pinned": get_pinned(), "catalog": get_catalog()}
 
 
 def get_versions(app: str):
@@ -296,6 +310,13 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
         # GET /api/pinned
         if path == "/api/pinned":
             body = {"pinned": get_pinned()}
+            self._send(200, body)
+            log("GET", self.path, 200)
+            return
+
+        # GET /api/catalog
+        if path == "/api/catalog":
+            body = get_catalog()
             self._send(200, body)
             log("GET", self.path, 200)
             return

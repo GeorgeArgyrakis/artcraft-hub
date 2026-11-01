@@ -229,7 +229,8 @@ artcraft-hub/
 ├── fetch-release.sh    # CLI helper to download specific historical release tags
 ├── entrypoint.sh       # Container startup: init config, deploy UI, start API + cron + Caddy
 ├── config/
-│   └── apps.conf       # App list (volume-mounted at /config/apps.conf)
+│   ├── apps.conf       # App list (volume-mounted at /config/apps.conf)
+│   └── catalog.json    # App metadata catalog (volume-mounted at /config/catalog.json)
 ├── previews/           # Bundled UI interface preview graphics (.webp)
 ├── icons/              # Bundled app mascot icons (.webp)
 ├── screenshots/        # Dashboard theme screenshots
@@ -244,12 +245,32 @@ artcraft-hub/
 The hub is designed without hardcoded app counts or fixed 13-app constraints:
 
 ### Adding New Applications
-Add any GitHub repository to `config/apps.conf` (e.g. `storytold/audiocraft` or `myorg/customcraft`):
-```bash
-echo "myorg/customcraft" >> config/apps.conf
-docker exec artcraft-hub sync.sh
-```
-The sync script automatically polls the latest release, downloads the WebAssembly archive (`*web*.zip`), symlinks `/data/{app}/current`, and regenerates `/data/manifest.json`.
+
+You have two flexible ways to add or customize applications:
+
+1. **Simple List (`config/apps.conf`)**:
+   Add any GitHub repository to `config/apps.conf` (e.g. `storytold/audiocraft` or `myorg/customcraft`):
+   ```bash
+   echo "myorg/customcraft" >> config/apps.conf
+   docker exec artcraft-hub sync.sh
+   ```
+2. **Metadata Catalog (`config/catalog.json`)**:
+   For granular control over presentation metadata (custom title, category, accent color, tagline, and description), define entries in `config/catalog.json`:
+   ```json
+   {
+     "customcraft": {
+       "repo": "myorg/customcraft",
+       "num": "16",
+       "title": "CustomCraft",
+       "category": "cad",
+       "categoryTag": "PROCEDURAL MODELING",
+       "accentColor": "#06b6d4",
+       "tagline": "Procedural 3D Modeling Studio",
+       "desc": "Next-generation procedural mesh authoring in WebAssembly."
+     }
+   }
+   ```
+The sync script automatically polls the latest release, downloads the WebAssembly archive (`*web*.zip`), symlinks `/data/{app}/current`, and regenerates `/data/manifest.json`. Repositories defined across `apps.conf` and `catalog.json` are seamlessly deduplicated and synchronized.
 
 ### Automatic Metadata & Category Inference
 For apps not pre-registered in the built-in catalog, the hub dynamically generates complete presentation metadata:

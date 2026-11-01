@@ -23,239 +23,22 @@
     /* -------------------------------------------------------------
        App Catalog & Categorization Metadata
        ------------------------------------------------------------- */
-    const APP_CATALOG = {
-      photocraft: {
-        num: "01",
-        title: "PhotoCraft",
-        category: "graphics",
-        categoryName: "Graphics & Photo",
-        categoryTag: "IMAGE EDITOR",
-        alt: "Photoshop alt",
-        accentColor: "#2563eb",
-        stage: "EARLY ALPHA",
-        web: true,
-        tagline: "Photo & Raster Image Editor",
-        desc: "The open-source image editor you already know how to use.",
-        monogram: "Ph",
-        gradient: "linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%)"
-      },
-      vectorcraft: {
-        num: "02",
-        title: "VectorCraft",
-        category: "vector",
-        categoryName: "Vector & Design",
-        categoryTag: "VECTOR ILLUSTRATION",
-        alt: "Illustrator alt",
-        accentColor: "#f97316",
-        stage: "IN DEVELOPMENT",
-        web: true,
-        tagline: "Vector Illustration & SVG",
-        desc: "Fast, open-source vector illustration, reimagined in pure Rust.",
-        monogram: "Vc",
-        gradient: "linear-gradient(135deg, #ea580c 0%, #f97316 100%)"
-      },
-      filmcraft: {
-        num: "03",
-        title: "FilmCraft",
-        category: "graphics",
-        categoryName: "Video & Motion",
-        categoryTag: "VIDEO EDITOR",
-        alt: "Premiere alt",
-        accentColor: "#7c3aed",
-        stage: "IN DEVELOPMENT",
-        web: false,
-        tagline: "Video Editing & Timeline",
-        desc: "Professional, open-source video editing, rebuilt from scratch in Rust.",
-        monogram: "Fc",
-        gradient: "linear-gradient(135deg, #6d28d9 0%, #8b5cf6 100%)"
-      },
-      lightcraft: {
-        num: "04",
-        title: "LightCraft",
-        category: "graphics",
-        categoryName: "Graphics & Photo",
-        categoryTag: "PHOTO LIBRARY & RAW DEVELO...",
-        alt: "Lightroom alt",
-        accentColor: "#f59e0b",
-        stage: "IN DEVELOPMENT",
-        web: true,
-        tagline: "RAW Photo Developer",
-        desc: "An open-source photo library and raw developer that runs on your machine.",
-        monogram: "Lc",
-        gradient: "linear-gradient(135deg, #d97706 0%, #f59e0b 100%)"
-      },
-      pdfcraft: {
-        num: "05",
-        title: "PDFCraft",
-        category: "documents",
-        categoryName: "Documents",
-        categoryTag: "PDF WORKBENCH",
-        alt: "Acrobat alt",
-        accentColor: "#ef4444",
-        stage: "IN DEVELOPMENT",
-        web: true,
-        tagline: "PDF Document Studio",
-        desc: "Fast PDF reading, document annotations, page reordering, and publishing.",
-        monogram: "Pd",
-        gradient: "linear-gradient(135deg, #dc2626 0%, #ef4444 100%)"
-      },
-      effectcraft: {
-        num: "06",
-        title: "EffectCraft",
-        category: "graphics",
-        categoryName: "Graphics & Photo",
-        categoryTag: "MOTION GRAPHICS & VFX",
-        alt: "After Effects alt",
-        accentColor: "#ec4899",
-        stage: "IN DEVELOPMENT",
-        web: true,
-        tagline: "VFX & Shader Studio",
-        desc: "GPU-accelerated procedural motion graphics, shaders, and real-time VFX.",
-        monogram: "Ef",
-        gradient: "linear-gradient(135deg, #db2777 0%, #ec4899 100%)"
-      },
-      designcraft: {
-        num: "07",
-        title: "DesignCraft",
-        category: "vector",
-        categoryName: "Vector & Design",
-        categoryTag: "PAGE LAYOUT & PUBLISHING",
-        alt: "InDesign alt",
-        accentColor: "#84cc16",
-        stage: "IN DEVELOPMENT",
-        web: true,
-        tagline: "UI/UX & Layout Studio",
-        desc: "Publication layout for booklets, guides, multi-page spreads, and typography.",
-        monogram: "Dc",
-        gradient: "linear-gradient(135deg, #65a30d 0%, #84cc16 100%)"
-      },
-      figcraft: {
-        num: "08",
-        title: "FigCraft",
-        category: "vector",
-        categoryName: "Vector & Design",
-        categoryTag: "INTERFACE DESIGN",
-        alt: "Figma alt",
-        accentColor: "#06b6d4",
-        stage: "IN DEVELOPMENT",
-        web: true,
-        tagline: "Interactive Canvas Studio",
-        desc: "Modern screen design, auto-layouts, infinite canvas, and interactive UI prototyping.",
-        monogram: "Fg",
-        gradient: "linear-gradient(135deg, #0891b2 0%, #06b6d4 100%)"
-      },
-      wordcraft: {
-        num: "09",
-        title: "WordCraft",
-        category: "documents",
-        categoryName: "Documents",
-        categoryTag: "DOCUMENT EDITOR",
-        alt: "Word alt",
-        accentColor: "#0284c7",
-        stage: "IN DEVELOPMENT",
-        web: true,
-        tagline: "Rich Text & Document Editor",
-        desc: "Distraction-free rich documents, Markdown briefs, and publication export.",
-        monogram: "Wc",
-        gradient: "linear-gradient(135deg, #0369a1 0%, #0284c7 100%)"
-      },
-      soundcraft: {
-        num: "10",
-        title: "SoundCraft",
-        category: "audio",
-        categoryName: "Audio",
-        categoryTag: "AUDIO SYNTHESIZER & DAW",
-        alt: "Pro Tools alt",
-        accentColor: "#d946ef",
-        stage: "IN DEVELOPMENT",
-        web: true,
-        tagline: "Audio Synthesizer & DAW",
-        desc: "Multi-track audio sessions, waveform synthesis, and procedural sound design.",
-        monogram: "Sc",
-        gradient: "linear-gradient(135deg, #c026d3 0%, #d946ef 100%)"
-      },
-      deckcraft: {
-        num: "11",
-        title: "DeckCraft",
-        category: "documents",
-        categoryName: "Documents",
-        categoryTag: "SLIDE DECKS & PRESENTATIONS",
-        alt: "PowerPoint alt",
-        accentColor: "#f43f5e",
-        stage: "IN DEVELOPMENT",
-        web: true,
-        tagline: "Slide Decks & Presentations",
-        desc: "Rapid presentation builder with code highlighting, visual charts, and export.",
-        monogram: "Dk",
-        gradient: "linear-gradient(135deg, #e11d48 0%, #f43f5e 100%)"
-      },
-      cadcraft: {
-        num: "12",
-        title: "CADCraft",
-        category: "cad",
-        categoryName: "3D & CAD",
-        categoryTag: "3D PARAMETRIC CAD",
-        alt: "AutoCAD alt",
-        accentColor: "#14b8a6",
-        stage: "IN DEVELOPMENT",
-        web: true,
-        tagline: "3D Parametric CAD Studio",
-        desc: "Parametric 2D/3D drafting, dimensional modeling, and STEP/STL 3D printing export.",
-        monogram: "Cd",
-        gradient: "linear-gradient(135deg, #0d9488 0%, #14b8a6 100%)"
-      },
-      gridcraft: {
-        num: "13",
-        title: "GridCraft",
-        category: "documents",
-        categoryName: "Documents",
-        categoryTag: "DATA GRID & SPREADSHEETS",
-        alt: "Excel alt",
-        accentColor: "#10b981",
-        stage: "IN DEVELOPMENT",
-        web: true,
-        tagline: "Data Grid & Spreadsheets",
-        desc: "High-performance calculation engine, reactive data tables, and financial modeling.",
-        monogram: "Gc",
-        gradient: "linear-gradient(135deg, #059669 0%, #10b981 100%)"
-      },
-      'craft-anything': {
-        num: "14",
-        title: "Craft Anything",
-        category: "vector",
-        categoryName: "Vector & Design",
-        categoryTag: "SOFTWARE RE-ENGINEERING & CODE",
-        alt: "Clean-room re-engineering",
-        accentColor: "#6366f1",
-        stage: "READY",
-        web: true,
-        tagline: "Software Inspection & Re-engineering",
-        desc: "Understand how any software works, inspect assets, and craft your own software with AI.",
-        monogram: "Ca",
-        gradient: "linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)"
-      },
-      craftanything: {
-        num: "14",
-        title: "Craft Anything",
-        category: "vector",
-        categoryName: "Vector & Design",
-        categoryTag: "SOFTWARE RE-ENGINEERING & CODE",
-        alt: "Clean-room re-engineering",
-        accentColor: "#6366f1",
-        stage: "READY",
-        web: true,
-        tagline: "Software Inspection & Re-engineering",
-        desc: "Understand how any software works, inspect assets, and craft your own software with AI.",
-        monogram: "Ca",
-        gradient: "linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)"
-      }
+    let APP_CATALOG = {};
+
+    const CATEGORY_NAMES = {
+      all: 'All Apps',
+      graphics: 'Graphics & Photo',
+      vector: 'Vector & Design',
+      documents: 'Documents',
+      audio: 'Audio',
+      cad: '3D & CAD'
     };
 
     /* -------------------------------------------------------------
        App Catalog & Dynamic Metadata Generator
        ------------------------------------------------------------- */
     const dynamicAppMetaCache = new Map();
-    let nextDynamicNum = Object.keys(APP_CATALOG).length + 1; // starts sequentially after catalog (14+)
+    let nextDynamicNum = 16;
 
     const PALETTES = [
       { accent: '#6366f1', grad: 'linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)' }, // Indigo
@@ -269,8 +52,35 @@
     ];
 
     function getAppMeta(appName) {
-      const key = (appName || '').toLowerCase();
-      if (APP_CATALOG[key]) return APP_CATALOG[key];
+      const rawKey = (appName || '').trim().toLowerCase();
+      const key = rawKey.replace(/^storytold\//, '');
+      const keyNoHyphen = key.replace(/-/g, '');
+      const item = APP_CATALOG[key] || APP_CATALOG[keyNoHyphen] || APP_CATALOG[rawKey];
+
+      if (item) {
+        const title = item.title || appName;
+        const cat = item.category || 'graphics';
+        const accent = item.accentColor || '#2563eb';
+        const catName = item.categoryName || CATEGORY_NAMES[cat] || 'Creative App';
+        const monogram = item.monogram || title.replace(/[^a-zA-Z0-9]/g, '').substring(0, 2).toUpperCase() || 'AC';
+        const gradient = item.gradient || `linear-gradient(135deg, ${accent} 0%, #0d0f17 100%)`;
+
+        return {
+          num: item.num || '00',
+          title: title,
+          category: cat,
+          categoryName: catName,
+          categoryTag: item.categoryTag || catName.toUpperCase(),
+          accentColor: accent,
+          tagline: item.tagline || `${title} Creative App`,
+          desc: item.desc || `Open-source ${title} creative application.`,
+          monogram: monogram,
+          gradient: gradient,
+          stage: item.stage || "READY",
+          web: item.web !== undefined ? item.web : true,
+          alt: item.alt || ""
+        };
+      }
 
       if (dynamicAppMetaCache.has(key)) {
         return dynamicAppMetaCache.get(key);
@@ -278,13 +88,15 @@
 
       // Title formatting (supports camelCase, kebab-case, snake_case)
       const cleanTitle = appName
+        .replace(/^storytold\//i, '')
         .replace(/[-_]/g, ' ')
         .replace(/([a-z])([A-Z])/g, '$1 $2')
         .split(' ')
+        .filter(Boolean)
         .map(w => w.charAt(0).toUpperCase() + w.slice(1))
         .join('');
 
-      const mono = cleanTitle.substring(0, 2).toUpperCase();
+      const mono = cleanTitle.substring(0, 2).toUpperCase() || 'AC';
 
       // Intelligent category detection from keywords
       let category = 'graphics';
@@ -295,7 +107,7 @@
         category = 'audio';
         categoryName = 'Audio';
         categoryTag = 'AUDIO WORKBENCH';
-      } else if (/cad|3d|mesh|model|render|shape/i.test(key)) {
+      } else if (/cad|3d|mesh|model|render|shape|texture/i.test(key)) {
         category = 'cad';
         categoryName = '3D & CAD';
         categoryTag = '3D WORKBENCH';
@@ -328,7 +140,8 @@
         tagline: `${categoryName} Studio App`,
         desc: `High-performance self-hosted ${cleanTitle} creative tool.`,
         monogram: mono,
-        gradient: palette.grad
+        gradient: palette.grad,
+        alt: ""
       };
 
       dynamicAppMetaCache.set(key, meta);
@@ -928,6 +741,14 @@
         const res = await fetch('/api/manifest');
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
+
+        if (data.catalog && typeof data.catalog === 'object') {
+          APP_CATALOG = data.catalog;
+          const catalogCount = Object.keys(APP_CATALOG).length;
+          if (catalogCount > 0) {
+            nextDynamicNum = Math.max(nextDynamicNum, catalogCount + 1);
+          }
+        }
 
         // Merge server pinned apps if local storage is empty
         if (data.pinned && Array.isArray(data.pinned) && data.pinned.length > 0 && pinnedApps.size === 0) {

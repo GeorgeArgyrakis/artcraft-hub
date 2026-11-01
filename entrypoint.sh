@@ -23,6 +23,11 @@ EOF
     echo "[INFO] Created default apps.conf at ${CONF_FILE}"
   fi
 fi
+# Ensure default catalog.json
+if [ ! -f "/config/catalog.json" ] && [ -f "/usr/local/share/artcraft/catalog.json" ]; then
+  cp /usr/local/share/artcraft/catalog.json "/config/catalog.json"
+  echo "[INFO] Initialized /config/catalog.json from bundled template"
+fi
 
 # Deploy or refresh hub dashboard to /data/index.html
 if [ -f "/config/custom_index.html" ]; then

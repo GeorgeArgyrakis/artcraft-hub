@@ -66,17 +66,28 @@ if [ "$#" -ge 1 ]; then
   fi
   fetch_single_icon "${repo_arg}"
 else
-  # Fetch for all apps in apps.conf
-  if [ ! -f "${CONF_FILE}" ]; then
-    echo "[WARN] apps.conf not found at ${CONF_FILE}"
-    exit 0
+  # Fetch for all apps in apps.conf and catalog.json
+  CATALOG_FILE="${CATALOG_FILE:-/config/catalog.json}"
+  all_repos=()
+
+  if [ -f "${CONF_FILE}" ]; then
+    while IFS= read -r line || [ -n "${line}" ]; do
+      line="${line// /}"
+      [[ -z "${line}" || "${line}" == \#* ]] && continue
+      all_repos+=("${line}")
+    done < "${CONF_FILE}"
+  fi
+
+  if [ -f "${CATALOG_FILE}" ]; then
+    while IFS= read -r r || [ -n "$r" ]; do
+      [[ -z "$r" ]] && continue
+      all_repos+=("$r")
+    done < <(jq -r 'to_entries[] | .value.repo // empty' "${CATALOG_FILE}" 2>/dev/null || true)
   fi
 
   echo "=== Synchronizing official vector icons from GitHub ==="
-  while IFS= read -r line || [ -n "${line}" ]; do
-    line="${line// /}"
-    [[ -z "${line}" || "${line}" == \#* ]] && continue
-    fetch_single_icon "${line}"
-  done < "${CONF_FILE}"
+  for repo in $(printf '%s\n' "${all_repos[@]}" 2>/dev/null | sort -u); do
+    fetch_single_icon "${repo}"
+  done
   echo "=== Icon synchronization complete ==="
 fi

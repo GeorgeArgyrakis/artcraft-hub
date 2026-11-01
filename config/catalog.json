@@ -1,0 +1,152 @@
+{
+  "photocraft": {
+    "repo": "storytold/photocraft",
+    "num": "01",
+    "title": "PhotoCraft",
+    "category": "graphics",
+    "categoryTag": "IMAGE EDITOR",
+    "accentColor": "#2563eb",
+    "tagline": "Photo & Raster Image Editor",
+    "desc": "The open-source image editor you already know how to use."
+  },
+  "vectorcraft": {
+    "repo": "storytold/vectorcraft",
+    "num": "02",
+    "title": "VectorCraft",
+    "category": "vector",
+    "categoryTag": "VECTOR ILLUSTRATION",
+    "accentColor": "#f97316",
+    "tagline": "Vector Illustration & SVG",
+    "desc": "Fast, open-source vector illustration, reimagined in pure Rust."
+  },
+  "filmcraft": {
+    "repo": "storytold/filmcraft",
+    "num": "03",
+    "title": "FilmCraft",
+    "category": "graphics",
+    "categoryTag": "VIDEO EDITOR",
+    "accentColor": "#7c3aed",
+    "tagline": "Video Editing & Timeline",
+    "desc": "Professional, open-source video editing, rebuilt from scratch in Rust."
+  },
+  "lightcraft": {
+    "repo": "storytold/lightcraft",
+    "num": "04",
+    "title": "LightCraft",
+    "category": "graphics",
+    "categoryTag": "RAW PHOTO DEVELOPER",
+    "accentColor": "#f59e0b",
+    "tagline": "RAW Photo Developer",
+    "desc": "An open-source photo library and raw developer that runs on your machine."
+  },
+  "pdfcraft": {
+    "repo": "storytold/pdfcraft",
+    "num": "05",
+    "title": "PDFCraft",
+    "category": "documents",
+    "categoryTag": "PDF WORKBENCH",
+    "accentColor": "#ef4444",
+    "tagline": "PDF Document Studio",
+    "desc": "Fast PDF reading, document annotations, page reordering, and publishing."
+  },
+  "effectcraft": {
+    "repo": "storytold/effectcraft",
+    "num": "06",
+    "title": "EffectCraft",
+    "category": "graphics",
+    "categoryTag": "MOTION GRAPHICS & VFX",
+    "accentColor": "#ec4899",
+    "tagline": "VFX & Shader Studio",
+    "desc": "GPU-accelerated procedural motion graphics, shaders, and real-time VFX."
+  },
+  "designcraft": {
+    "repo": "storytold/designcraft",
+    "num": "07",
+    "title": "DesignCraft",
+    "category": "vector",
+    "categoryTag": "PAGE LAYOUT & PUBLISHING",
+    "accentColor": "#84cc16",
+    "tagline": "UI/UX & Layout Studio",
+    "desc": "Publication layout for booklets, guides, multi-page spreads, and typography."
+  },
+  "figcraft": {
+    "repo": "storytold/figcraft",
+    "num": "08",
+    "title": "FigCraft",
+    "category": "vector",
+    "categoryTag": "INTERFACE DESIGN",
+    "accentColor": "#06b6d4",
+    "tagline": "Interactive Canvas Studio",
+    "desc": "Modern screen design, auto-layouts, infinite canvas, and interactive UI prototyping."
+  },
+  "wordcraft": {
+    "repo": "storytold/wordcraft",
+    "num": "09",
+    "title": "WordCraft",
+    "category": "documents",
+    "categoryTag": "DOCUMENT EDITOR",
+    "accentColor": "#0284c7",
+    "tagline": "Rich Text & Document Editor",
+    "desc": "Distraction-free rich documents, Markdown briefs, and publication export."
+  },
+  "soundcraft": {
+    "repo": "storytold/soundcraft",
+    "num": "10",
+    "title": "SoundCraft",
+    "category": "audio",
+    "categoryTag": "AUDIO SYNTHESIZER & DAW",
+    "accentColor": "#d946ef",
+    "tagline": "Audio Synthesizer & DAW",
+    "desc": "Multi-track audio sessions, waveform synthesis, and procedural sound design."
+  },
+  "deckcraft": {
+    "repo": "storytold/deckcraft",
+    "num": "11",
+    "title": "DeckCraft",
+    "category": "documents",
+    "categoryTag": "SLIDE DECKS & PRESENTATIONS",
+    "accentColor": "#f43f5e",
+    "tagline": "Slide Decks & Presentations",
+    "desc": "Rapid presentation builder with code highlighting, visual charts, and export."
+  },
+  "cadcraft": {
+    "repo": "storytold/cadcraft",
+    "num": "12",
+    "title": "CADCraft",
+    "category": "cad",
+    "categoryTag": "3D PARAMETRIC CAD",
+    "accentColor": "#14b8a6",
+    "tagline": "3D Parametric CAD Studio",
+    "desc": "Parametric 2D/3D drafting, dimensional modeling, and STEP/STL 3D printing export."
+  },
+  "gridcraft": {
+    "repo": "storytold/gridcraft",
+    "num": "13",
+    "title": "GridCraft",
+    "category": "documents",
+    "categoryTag": "DATA GRID & SPREADSHEETS",
+    "accentColor": "#10b981",
+    "tagline": "Data Grid & Spreadsheets",
+    "desc": "High-performance calculation engine, reactive data tables, and financial modeling."
+  },
+  "craft-anything": {
+    "repo": "storytold/craft-anything",
+    "num": "14",
+    "title": "Craft Anything",
+    "category": "vector",
+    "categoryTag": "SOFTWARE RE-ENGINEERING & CODE",
+    "accentColor": "#6366f1",
+    "tagline": "Software Inspection & Re-engineering",
+    "desc": "Understand how any software works, inspect assets, and craft your own software with AI."
+  },
+  "texturecraft": {
+    "repo": "storytold/texturecraft",
+    "num": "15",
+    "title": "TextureCraft",
+    "category": "cad",
+    "categoryTag": "3D TEXTURE PAINTING",
+    "accentColor": "#eab308",
+    "tagline": "3D Texture Painting & Materials",
+    "desc": "Open-source 3D texture painting and procedural PBR material authoring in pure Rust."
+  }
+}

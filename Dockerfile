@@ -31,7 +31,8 @@ COPY             app.js           /usr/local/share/artcraft/app.js
 COPY             logo.svg         /usr/local/share/artcraft/logo.svg
 COPY             logo.png         /usr/local/share/artcraft/logo.png
 COPY             favicon.ico      /usr/local/share/artcraft/favicon.ico
-COPY             config/apps.conf /usr/local/share/artcraft/apps.conf
+COPY             config/apps.conf    /usr/local/share/artcraft/apps.conf
+COPY             config/catalog.json /usr/local/share/artcraft/catalog.json
 COPY             icons            /usr/local/share/artcraft/icons
 COPY             previews         /usr/local/share/artcraft/previews
 COPY             assets           /usr/local/share/artcraft/assets

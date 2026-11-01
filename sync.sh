@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 
 CONF_FILE="${CONF_FILE:-/config/apps.conf}"
+CATALOG_FILE="${CATALOG_FILE:-/config/catalog.json}"
 TARGET_DIR="${TARGET_DIR:-/data}"
 MAX_RELEASES="${MAX_RELEASES:-3}"
 
@@ -20,11 +21,33 @@ trap cleanup_on_exit EXIT
 # Read app list from conf file
 # ---------------------------------------------------------------------------
 read_apps() {
-  if [ ! -f "${CONF_FILE}" ]; then
-    echo "[WARN] No apps.conf found at ${CONF_FILE}. Nothing to sync." >&2
+  local apps=()
+  # 1. Read from apps.conf if present
+  if [ -f "${CONF_FILE}" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      line=$(echo "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+      [[ "$line" =~ ^# ]] && continue
+      [[ -z "$line" ]] && continue
+      apps+=("$line")
+    done < "${CONF_FILE}"
+  fi
+
+  # 2. Read any repos defined in catalog.json
+  if [ -f "${CATALOG_FILE}" ]; then
+    local cat_repos
+    cat_repos=$(jq -r 'to_entries[] | .value.repo // empty' "${CATALOG_FILE}" 2>/dev/null || true)
+    while IFS= read -r repo || [ -n "$repo" ]; do
+      [[ -z "$repo" ]] && continue
+      apps+=("$repo")
+    done <<< "$cat_repos"
+  fi
+
+  if [ ${#apps[@]} -eq 0 ]; then
+    echo "[WARN] No apps found in ${CONF_FILE} or ${CATALOG_FILE}. Nothing to sync." >&2
     return 1
   fi
-  grep -v '^\s*#' "${CONF_FILE}" | grep -v '^\s*$' || true
+
+  printf '%s\n' "${apps[@]}" | sort -u
 }
 
 # ---------------------------------------------------------------------------
