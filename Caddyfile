@@ -59,8 +59,6 @@
         not path /
         not path /styles.css
         not path /app.js
-        not path *.css
-        not path *.js
         not path /logo.svg
         not path /logo.png
         not path /favicon.ico

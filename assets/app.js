@@ -218,7 +218,36 @@
         desc: "High-performance calculation engine, reactive data tables, and financial modeling.",
         monogram: "Gc",
         gradient: "linear-gradient(135deg, #059669 0%, #10b981 100%)"
-      }
+      },
+      'craft-anything': {
+        num: "14",
+        title: "Craft Anything",
+        category: "vector",
+        categoryName: "Vector & Design",
+        categoryTag: "SOFTWARE RE-ENGINEERING & CODE",
+        alt: "Clean-room re-engineering",
+        accentColor: "#6366f1",
+        stage: "READY",
+        web: true,
+        tagline: "Software Inspection & Re-engineering",
+        desc: "Understand how any software works, inspect assets, and craft your own software with AI.",
+        monogram: "Ca",
+        gradient: "linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)"
+      },
+      craftanything: {
+        num: "14",
+        title: "Craft Anything",
+        category: "vector",
+        categoryName: "Vector & Design",
+        categoryTag: "SOFTWARE RE-ENGINEERING & CODE",
+        alt: "Clean-room re-engineering",
+        accentColor: "#6366f1",
+        stage: "READY",
+        web: true,
+        tagline: "Software Inspection & Re-engineering",
+        desc: "Understand how any software works, inspect assets, and craft your own software with AI.",
+        monogram: "Ca",
+        gradient: "linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)"
     };
 
     /* -------------------------------------------------------------
@@ -579,6 +608,25 @@
               <rect x="14" y="122" width="292" height="22" fill="#0c1213" stroke="#172421" stroke-width="1"/>
             </svg>
           `;
+        case 'craft-anything':
+        case 'craftanything':
+          return `
+            <svg viewBox="0 0 320 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect width="320" height="160" fill="#0b0c16"/>
+              <rect x="0" y="0" width="320" height="22" fill="#141728"/>
+              <text x="14" y="14" fill="#6366f1" font-family="monospace" font-size="8.5" font-weight="700">CRAFT ANYTHING &bull; Inspect & Re-engineer [Rust]</text>
+              <rect x="14" y="32" width="130" height="114" rx="3" fill="#111424" stroke="#252b48" stroke-width="1"/>
+              <rect x="156" y="32" width="150" height="114" rx="3" fill="#111424" stroke="#252b48" stroke-width="1"/>
+              <line x1="24" y1="48" x2="110" y2="48" stroke="#6366f1" stroke-width="2"/>
+              <line x1="24" y1="60" x2="85" y2="60" stroke="#4f46e5" stroke-width="1.5"/>
+              <line x1="24" y1="72" x2="120" y2="72" stroke="#3b82f6" stroke-width="1.5"/>
+              <line x1="24" y1="84" x2="95" y2="84" stroke="#8b5cf6" stroke-width="1.5"/>
+              <line x1="166" y1="48" x2="270" y2="48" stroke="#10b981" stroke-width="1.5"/>
+              <line x1="166" y1="60" x2="250" y2="60" stroke="#38bdf8" stroke-width="1.5"/>
+              <line x1="166" y1="72" x2="280" y2="72" stroke="#f59e0b" stroke-width="1.5"/>
+              <line x1="166" y1="84" x2="220" y2="84" stroke="#ec4899" stroke-width="1.5"/>
+            </svg>
+          `;
         default:
           const fallbackMeta = getAppMeta(key);
           return `
@@ -626,6 +674,9 @@
           return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="22" height="22"><polygon points="4,4 4,20 20,20"/><polygon points="7,13 7,17 11,17"/><path d="M13 7a7 7 0 0 1 7 7"/></svg>`;
         case 'gridcraft':
           return `<svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M3 3V21H21V3H3ZM9 9H5V5H9V9ZM15 9H11V5H15V9ZM19 9H17V5H19V9ZM9 15H5V11H9V15ZM15 15H11V11H15V15ZM19 15H17V11H19V15ZM9 19H5V17H9V19ZM15 19H11V17H15V19ZM19 19H17V17H19V19Z"/></svg>`;
+        case 'craft-anything':
+        case 'craftanything':
+          return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="22" height="22"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>`;
         default:
           return `<svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><polygon points="12,2 2,22 22,22"/></svg>`;
       }
