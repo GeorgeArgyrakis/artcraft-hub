@@ -248,6 +248,7 @@
         desc: "Understand how any software works, inspect assets, and craft your own software with AI.",
         monogram: "Ca",
         gradient: "linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)"
+      }
     };
 
     /* -------------------------------------------------------------
