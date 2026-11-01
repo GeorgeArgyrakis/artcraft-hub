@@ -1401,19 +1401,15 @@
     let currentTheme = localStorage.getItem(THEME_KEY) || 'artcraft';
 
     function applyTheme(theme, notify = false) {
-      currentTheme = theme;
-      if (theme === 'artcraft') {
-        document.documentElement.setAttribute('data-theme', 'artcraft');
-      } else {
-        document.documentElement.removeAttribute('data-theme');
-      }
-      localStorage.setItem(THEME_KEY, theme);
+      currentTheme = (theme === 'glass') ? 'glass' : 'artcraft';
+      document.documentElement.setAttribute('data-theme', currentTheme);
+      localStorage.setItem(THEME_KEY, currentTheme);
       updateThemeButtonUI();
       if (rawApps && rawApps.length > 0) {
         renderGrid();
       }
       if (notify) {
-        const name = theme === 'artcraft' ? 'ArtCraft Theme' : 'Glass Theme';
+        const name = currentTheme === 'artcraft' ? 'ArtCraft Theme' : 'Glass Theme';
         showToast('Theme Updated', `Switched to ${name}`, 'info');
       }
     }

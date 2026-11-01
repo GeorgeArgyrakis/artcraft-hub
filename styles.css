@@ -1,7 +1,7 @@
 /* -------------------------------------------------------------
        Design System & CSS Variables (Figma / Linear Dark Aesthetic)
        ------------------------------------------------------------- */
-    :root {
+    :root, [data-theme="glass"] {
       --bg-base: #08090d;
       --bg-surface: rgba(16, 19, 28, 0.72);
       --bg-surface-hover: rgba(22, 27, 40, 0.85);

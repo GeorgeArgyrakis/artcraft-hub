@@ -34,6 +34,7 @@ COPY             favicon.ico      /usr/local/share/artcraft/favicon.ico
 COPY             config/apps.conf /usr/local/share/artcraft/apps.conf
 COPY             icons            /usr/local/share/artcraft/icons
 COPY             previews         /usr/local/share/artcraft/previews
+COPY             assets           /usr/local/share/artcraft/assets
 COPY --chmod=755 sync.sh          /usr/local/bin/sync.sh
 COPY --chmod=755 entrypoint.sh    /usr/local/bin/entrypoint.sh
 COPY --chmod=755 switch_api.py    /usr/local/bin/switch_api.py

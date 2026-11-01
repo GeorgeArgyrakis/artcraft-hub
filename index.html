@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="artcraft">
 
 <head>
   <meta charset="UTF-8">
@@ -17,11 +17,7 @@
     (function () {
       try {
         const saved = localStorage.getItem('artcraft_hub_theme') || 'artcraft';
-        if (saved === 'artcraft') {
-          document.documentElement.setAttribute('data-theme', 'artcraft');
-        } else {
-          document.documentElement.removeAttribute('data-theme');
-        }
+        document.documentElement.setAttribute('data-theme', saved === 'glass' ? 'glass' : 'artcraft');
       } catch (e) { }
     })();
 

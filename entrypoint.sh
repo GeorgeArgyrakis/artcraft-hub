@@ -47,6 +47,20 @@ if [ ! -f "/data/favicon.ico" ] && [ -f "/usr/local/share/artcraft/favicon.ico" 
   echo "[INFO] Deployed default favicon.ico to /data/favicon.ico"
 fi
 
+# Deploy logo assets if present
+if [ -f "/usr/local/share/artcraft/logo.svg" ]; then
+  mkdir -p /data/assets
+  cp /usr/local/share/artcraft/logo.svg /data/logo.svg 2>/dev/null || true
+  cp /usr/local/share/artcraft/logo.svg /data/assets/logo.svg 2>/dev/null || true
+  echo "[INFO] Deployed logo.svg to /data and /data/assets"
+fi
+if [ -f "/usr/local/share/artcraft/logo.png" ]; then
+  mkdir -p /data/assets
+  cp /usr/local/share/artcraft/logo.png /data/logo.png 2>/dev/null || true
+  cp /usr/local/share/artcraft/logo.png /data/assets/logo.png 2>/dev/null || true
+  echo "[INFO] Deployed logo.png to /data and /data/assets"
+fi
+
 # Deploy preview graphics if bundled
 if [ -d "/usr/local/share/artcraft/previews" ]; then
   mkdir -p /data/previews /data/assets/previews
