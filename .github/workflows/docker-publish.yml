@@ -13,8 +13,32 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  test-and-validate:
+    name: Run Automated Tests & Validations
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run manifest & catalog validation tests
+        run: node --test tests/validate_catalog.test.js
+
+      - name: Run Python switch API unit tests
+        run: python3 -m unittest discover tests
+
   build-and-push:
     name: Build and Push Docker Image
+    needs: [test-and-validate]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -51,7 +75,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

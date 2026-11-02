@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="100%" height="100%">
+  <defs>
+    <linearGradient id="ca-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#818cf8"/>
+      <stop offset="100%" stop-color="#4f46e5"/>
+    </linearGradient>
+    <filter id="ca-shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#ca-grad)"/>
+  <!-- Stylized Craft Anything Symbol: Code inspection & creative crafting -->
+  <g filter="url(#ca-shadow)">
+    <!-- Layered inspection diamond & code brackets -->
+    <path d="M64 28 L94 48 L64 68 L34 48 Z" fill="#ffffff" fill-opacity="0.95"/>
+    <path d="M34 58 L64 78 L94 58 L94 66 L64 86 L34 66 Z" fill="#ffffff" fill-opacity="0.75"/>
+    <path d="M34 76 L64 96 L94 76 L94 84 L64 104 L34 84 Z" fill="#ffffff" fill-opacity="0.5"/>
+    <!-- Center spark -->
+    <circle cx="64" cy="48" r="4.5" fill="#4f46e5"/>
+  </g>
+</svg>
