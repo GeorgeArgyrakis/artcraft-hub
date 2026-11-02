@@ -8,7 +8,7 @@ CRON_SCHEDULE="${SYNC_CRON:-0 0 * * *}"
 echo "=== ArtCraft Hub starting ==="
 
 # Ensure config directory and default apps.conf
-mkdir -p /config /data /data/assets /data/icons /data/previews /data/assets/previews
+mkdir -p /config /data /data/assets /data/icons /data/previews
 if [ ! -f "${CONF_FILE}" ]; then
   if [ -f "/usr/local/share/artcraft/apps.conf" ]; then
     cp /usr/local/share/artcraft/apps.conf "${CONF_FILE}"
@@ -69,17 +69,15 @@ fi
 
 # Deploy preview graphics if bundled
 if [ -d "/usr/local/share/artcraft/previews" ]; then
-  mkdir -p /data/previews /data/assets/previews
+  mkdir -p /data/previews
   cp -r /usr/local/share/artcraft/previews/* /data/previews/ 2>/dev/null || true
-  cp -r /usr/local/share/artcraft/previews/* /data/assets/previews/ 2>/dev/null || true
   echo "[INFO] Deployed bundled preview graphics to /data/previews"
 fi
 
 # Deploy bundled application icons if present
 if [ -d "/usr/local/share/artcraft/icons" ]; then
-  mkdir -p /data/icons /data/assets/icons
+  mkdir -p /data/icons
   cp -r /usr/local/share/artcraft/icons/* /data/icons/ 2>/dev/null || true
-  cp -r /usr/local/share/artcraft/icons/* /data/assets/icons/ 2>/dev/null || true
   echo "[INFO] Deployed bundled application icons to /data/icons"
 fi
 
