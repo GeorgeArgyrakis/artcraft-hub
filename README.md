@@ -21,14 +21,15 @@ A self-hosted Docker container that automatically fetches the latest WebAssembly
 
 | Component | Role |
 |-----------|------|
-| **Caddy 2** | High-performance web server — serves static WASM apps from `/data` with correct COOP/COEP headers and MIME types |
+| **Caddy 2** | High-performance web server — serves static WASM apps from `/data` with correct COOP/COEP headers, MIME types, and clean app URL rewrites |
 | **Supercronic** | Lightweight cron daemon for containers — triggers `sync.sh` on a configurable schedule |
-| **sync.sh** | Bash script that polls GitHub Releases API, downloads `*web*.zip` assets, and rebuilds the dashboard |
+| **sync.sh** | Bash script that polls GitHub Releases API, downloads and unpacks `*web*.zip` assets, maintains version history, and prunes old releases |
+| **switch_api.py** | Python 3 sidecar HTTP API (`:5000`) — powers live manifest delivery, atomic release switching, sync triggers, and pinned favorites |
 
 The setup uses **two named Docker volumes** so your downloaded apps and configuration survive image rebuilds:
 
-- `artcraft-data` → `/data` — WASM app files + generated `index.html`
-- `artcraft-config` → `/config` — `apps.conf` (your app list)
+- `artcraft-data` → `/data` — WASM app files, active release symlinks, icons, previews, and dashboard assets
+- `artcraft-config` → `/config` — `apps.conf` (app list) and `catalog.json` (metadata catalog)
 
 ---
 
@@ -115,23 +116,29 @@ open http://localhost:8080
 | `GITHUB_TOKEN` | *(empty)* | Personal access token for GitHub API. Without it you're limited to 60 unauthenticated requests/hour. With it: 5,000/hour. Create one at **Settings → Developer settings → Personal access tokens** (no scopes needed for public repos). |
 | `SYNC_CRON` | `0 0 * * *` | Cron expression for release checks. Uses standard 5-field cron syntax. Examples: `*/30 * * * *` (every 30 min), `0 */6 * * *` (every 6 hours). |
 | `TZ` | `UTC` | Timezone for the cron schedule (e.g. `Europe/Athens`, `America/New_York`). |
+| `MAX_RELEASES` | `3` | Maximum number of downloaded release versions to keep per app. Older inactive releases are pruned automatically. |
 | `CONF_FILE` | `/config/apps.conf` | Path to the app list inside the container. Override only if you have a custom volume layout. |
+| `CATALOG_FILE` | `/config/catalog.json` | Path to the metadata catalog inside the container. Override only if you have a custom volume layout. |
 | `TARGET_DIR` | `/data` | Root directory where apps are downloaded and served from. |
 
 ### Adding or Removing Apps
 
-Edit `config/apps.conf` on the **host** (it's volume-mounted, no rebuild required):
+You can manage apps by editing volume-mounted files on the **host** without rebuilding:
 
-```
-# config/apps.conf
-storytold/photocraft
-storytold/vectorcraft
-storytold/pdfcraft
-```
+1. **Simple List (`config/apps.conf`)**:
+   Add or remove one `org/repo` per line:
+   ```
+   # config/apps.conf
+   storytold/photocraft
+   storytold/vectorcraft
+   storytold/pdfcraft
+   storytold/texturecraft
+   ```
+   - Lines starting with `#` are comments and are ignored.
+   - Blank lines are ignored.
 
-- One `org/repo` per line.
-- Lines starting with `#` are comments and are ignored.
-- Blank lines are ignored.
+2. **Metadata Catalog (`config/catalog.json`)**:
+   Optionally define or customize metadata (custom title, category, accent color, tagline, description) for any application.
 
 Changes take effect at the **next scheduled sync** (default: midnight). To apply immediately:
 
@@ -139,7 +146,7 @@ Changes take effect at the **next scheduled sync** (default: midnight). To apply
 docker exec artcraft-hub sync.sh
 ```
 
-To remove an app, delete or comment out its line **and** manually remove its directory from the volume if you want to reclaim space:
+To completely remove an app, delete or comment out its entry **and** optionally remove its directory from the data volume to reclaim disk space:
 
 ```bash
 docker exec artcraft-hub rm -rf /data/photocraft
@@ -151,8 +158,8 @@ docker exec artcraft-hub rm -rf /data/photocraft
 
 | Volume | Mount | Contents |
 |--------|-------|----------|
-| `artcraft-data` | `/data` | Downloaded WASM apps (one subdirectory per repo) + `index.html` dashboard |
-| `artcraft-config` | `/config` | `apps.conf` — your app list |
+| `artcraft-data` | `/data` | Downloaded WASM apps, release history, current symlinks, icons, previews, and dashboard files |
+| `artcraft-config` | `/config` | `apps.conf` (app list) and `catalog.json` (presentation metadata) |
 
 Both volumes are created automatically by `docker compose up`. They persist across container restarts and image upgrades.
 
@@ -228,12 +235,14 @@ artcraft-hub/
 ├── entrypoint.sh       # Container startup: init config, deploy UI, start API + cron + Caddy
 ├── assets/
 │   ├── styles.css      # Decoupled stylesheet covering ArtCraft Theme and Glass Theme
-│   └── app.js          # Decoupled client logic, DOM batching, and dynamic metadata
+│   ├── app.js          # Decoupled client logic, DOM batching, and dynamic metadata
+│   ├── logo.svg        # Suite vector logo
+│   └── logo.png        # Suite raster logo fallback
 ├── config/
 │   ├── apps.conf       # App list (volume-mounted at /config/apps.conf)
 │   └── catalog.json    # App metadata catalog (volume-mounted at /config/catalog.json)
 ├── previews/           # Bundled UI interface preview graphics (.webp)
-├── icons/              # Bundled app mascot icons (.webp)
+├── icons/              # Bundled app icons (.webp)
 ├── screenshots/        # Dashboard theme screenshots
 ├── .env.example        # Environment variable template
 └── .dockerignore
@@ -243,7 +252,7 @@ artcraft-hub/
 
 ## 🧩 Dynamic App Architecture & Extensibility
 
-The hub is designed without hardcoded app counts or fixed 13-app constraints:
+The hub is designed dynamically without hardcoded application limits or fixed catalog constraints:
 
 ### Adding New Applications
 
@@ -271,29 +280,29 @@ You have two flexible ways to add or customize applications:
      }
    }
    ```
-The sync script automatically polls the latest release, downloads the WebAssembly archive (`*web*.zip`), symlinks `/data/{app}/current`, and regenerates `/data/manifest.json`. Repositories defined across `apps.conf` and `catalog.json` are seamlessly deduplicated and synchronized.
+The sync script automatically polls the latest release, downloads the WebAssembly archive (`*web*.zip`), symlinks `/data/{app}/current`, and updates release history in `/data/{app}/versions.json`. Repositories defined across `apps.conf` and `catalog.json` are seamlessly deduplicated and synchronized.
 
 ### Automatic Metadata & Category Inference
 For apps not pre-registered in the built-in catalog, the hub dynamically generates complete presentation metadata:
-- **Title Formatting**: Automatically formats slugs into title case (e.g. `audio-craft` → `AudioCraft`).
-- **Sequential Lineup Number (`num`)**: Dynamic numbering automatically continues after built-in apps (`14`, `15`, `16`...) so that badge numbers `[14]` and grid ordering stay in sequence.
+- **Title Formatting**: Automatically formats slugs into clean title case (e.g. `audio-craft` → `AudioCraft`).
+- **Sequential Lineup Number (`num`)**: Dynamic numbering automatically continues sequentially after registered catalog apps (`16`, `17`, `18`...) so that badge numbers and grid ordering stay in sequence.
 - **Intelligent Categorization**: Detects categories based on keywords in the app slug:
-  - `audio`, `sound`, `music`, `synth` → **Audio** tab (`AUDIO WORKBENCH`)
-  - `cad`, `3d`, `mesh`, `model` → **3D & CAD** tab (`3D WORKBENCH`)
-  - `doc`, `pdf`, `text`, `sheet`, `page` → **Documents** tab (`DOCUMENT STUDIO`)
-  - `vector`, `svg`, `draw`, `fig`, `ui` → **Vector & Design** tab (`VECTOR & DESIGN`)
-  - All others default to **Graphics & Photo**
+  - `audio`, `sound`, `music`, `synth`, `voice`, `track` → **Audio** tab (`AUDIO WORKBENCH`)
+  - `cad`, `3d`, `mesh`, `model`, `render`, `shape`, `texture` → **3D & CAD** tab (`3D WORKBENCH`)
+  - `doc`, `word`, `pdf`, `text`, `sheet`, `page`, `note`, `book`, `publish` → **Documents** tab (`DOCUMENT STUDIO`)
+  - `vector`, `svg`, `draw`, `design`, `fig`, `ui`, `ux`, `layout`, `canvas` → **Vector & Design** tab (`VECTOR & DESIGN`)
+  - All others default to **Graphics & Photo** (`CREATIVE STUDIO`)
 - **Accent Color & Gradient**: Deterministically selected from a vibrant color palette based on a hash of the app name, ensuring every newly added app has a consistent, distinctive accent color.
 
 ### Icon Fallback System (3-Tier)
-1. **Local WebP Icon**: Checks `/icons/{app}.webp`.
-2. **Downloaded Vector Master SVG**: `fetch-icons.sh` automatically attempts to download `assets/app-icon/{app}.svg` from the repository root into `/data/icons/{app}.svg`.
-3. **Monogram / Mascot Fallback**: If no image file is found, displays a clean 2-letter uppercase monogram (e.g. `Au` for `AudioCraft`) or suite mascot inside a rounded gradient container matching the app's accent color. Broken image icons are never shown.
+1. **Local WebP Icon**: Checks `/icons/{app}.webp` (from bundled assets or volume-mounted `/data/icons/{app}.webp`).
+2. **Downloaded Vector Master SVG**: If no WebP is found, attempts to load `/icons/{app}.svg`. `fetch-icons.sh` automatically downloads `assets/app-icon/{app}.svg` from the application's GitHub repository root into `/data/icons/{app}.svg`.
+3. **Monogram Fallback**: If no image file is found, displays a clean 2-letter uppercase monogram (e.g. `Au` for `AudioCraft`, `Ph` for `PhotoCraft`, `Te` for `TextureCraft`) inside a rounded container with the app's accent color. Broken image icons are never shown.
 
 ### Preview Graphic Fallback System (3-Tier)
-1. **Local WebP Screenshot**: Checks `/previews/{app}.webp`. You can place your own high-resolution screenshots into `/data/previews/{app}.webp` at any time.
-2. **Official CDN Graphic**: Attempts to fetch the preview from the official CDN.
-3. **Vector Blueprint Fallback**: Renders an inline vector CAD workspace blueprint featuring window controls, geometric wireframes, and `<APP> WORKSPACE` labeled in the app's accent color.
+1. **Local WebP Preview**: Checks `/previews/{app}.webp`. You can place your own high-resolution screenshots into `/data/previews/{app}.webp` at any time.
+2. **Online ArtCraft CDN Graphic**: If local preview is missing, attempts to fetch the live showcase graphic from `https://getartcraft.com/images/apps/{app}/hero.webp` (or `color.webp` for FilmCraft).
+3. **Subtle Placeholder Fallback**: If neither local nor online graphic is available, renders a clean dark blueprint grid with a subtle minimalist image placeholder icon. Broken image icons are never shown.
 
 ---
 
@@ -304,9 +313,9 @@ The hub features two fully decoupled themes switchable on-the-fly via the top na
 ### 1. ArtCraft Studio Theme (`[data-theme="artcraft"]`)
 Inspired directly by [getartcraft.com/apps](https://getartcraft.com/apps):
 - **Continuous Architectural Grid**: 4-column matrix grid separated by fine 1px borders.
-- **Top Bar**: Numbered accent badge (`01`, `02`, `14`...) on the left, with uppercase category tag on the right.
-- **Overlapping Mascot Icon**: 52×52px rounded-square app icon overlapping the bottom seam of the preview image.
-- **Vertical Hierarchy**: Prominent bold white title directly beneath the mascot icon, subtle favorites pin on the right, description, and release pill row.
+- **Top Bar**: Numbered accent badge (`01`, `02`, `15`...) on the left, with uppercase category tag on the right.
+- **Overlapping App Icon**: 52×52px rounded-square app icon overlapping the bottom seam of the preview image.
+- **Vertical Hierarchy**: Prominent bold white title directly beneath the app icon, subtle favorites pin on the right, description, and release pill row.
 - **Single-Version vs. Multi-Version Pills**:
   - Single version installed: Subtle pill showing the active release tag with no chevron arrow that does not expand on click.
   - Multiple versions installed: Expands into a dropdown menu to choose and switch installed versions.
@@ -345,8 +354,8 @@ docker exec artcraft-hub caddy reload --config /etc/caddy/Caddyfile
   ```bash
   docker exec -it artcraft-hub fetch-icons.sh
   ```
-- **Custom Suite Logo**: Place your custom SVG or PNG logo at `/data/assets/logo.svg` (or `logo.png`).
-- **Custom Icons Override**: Place any custom icon at `/data/icons/{app}.svg` to override the official vector icon.
+- **Custom Suite Logo**: Place your custom SVG or PNG logo at `/data/assets/logo.svg` (or `/data/assets/logo.png`).
+- **Custom Icons Override**: Place any custom icon at `/data/icons/{app}.webp` or `/data/icons/{app}.svg` to override downloaded icons.
 
 ---
 
