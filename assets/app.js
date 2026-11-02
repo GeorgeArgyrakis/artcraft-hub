@@ -1,26 +1,4 @@
 /* -------------------------------------------------------------
-       Logo & Favicon Synchronization Handlers
-       ------------------------------------------------------------- */
-    function handleCustomLogoLoad(img) {
-      img.style.display = 'block';
-      const defaultSvg = document.getElementById('default-logo-svg');
-      if (defaultSvg) defaultSvg.style.display = 'none';
-      const favSvg = document.getElementById('hub-favicon-svg');
-      if (favSvg) favSvg.href = img.src;
-    }
-
-    function handleCustomLogoError(img) {
-      if (!img.dataset.triedPng) {
-        img.dataset.triedPng = 'true';
-        img.src = '/assets/logo.png';
-      } else {
-        img.style.display = 'none';
-        const defaultSvg = document.getElementById('default-logo-svg');
-        if (defaultSvg) defaultSvg.style.display = 'block';
-      }
-    }
-
-    /* -------------------------------------------------------------
        App Catalog & Categorization Metadata
        ------------------------------------------------------------- */
     let APP_CATALOG = {};
@@ -990,8 +968,7 @@
        ------------------------------------------------------------- */
     window.clearFilters = clearFilters;
     window.triggerSync = triggerSync;
-    window.handleCustomLogoLoad = handleCustomLogoLoad;
-    window.handleCustomLogoError = handleCustomLogoError;
 
     applyTheme(currentTheme, false);
     fetchManifest();
+

@@ -1,5 +1,13 @@
 .git
-.env
+.github
+.env*
 *.md
 scratch/
 screenshots/
+tests/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.vscode/
+.idea/
+node_modules/
