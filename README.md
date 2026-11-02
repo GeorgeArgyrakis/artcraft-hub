@@ -272,7 +272,7 @@ You have two flexible ways to add or customize applications:
        "repo": "myorg/customcraft",
        "num": "16",
        "title": "CustomCraft",
-       "category": "cad",
+       "category": "3D & CAD",
        "categoryTag": "PROCEDURAL MODELING",
        "accentColor": "#06b6d4",
        "tagline": "Procedural 3D Modeling Studio",
@@ -282,11 +282,12 @@ You have two flexible ways to add or customize applications:
    ```
 The sync script automatically polls the latest release, downloads the WebAssembly archive (`*web*.zip`), symlinks `/data/{app}/current`, and updates release history in `/data/{app}/versions.json`. Repositories defined across `apps.conf` and `catalog.json` are seamlessly deduplicated and synchronized.
 
-### Automatic Metadata & Category Inference
-For apps not pre-registered in the built-in catalog, the hub dynamically generates complete presentation metadata:
+### Dynamic Categories & Metadata Inference
+The dashboard toolbar generates category filter tabs dynamically from whatever categories are present in `catalog.json`:
+- **Dynamic Category Tabs**: Adding an app with a new category (e.g. `"category": "Game Development"`) automatically creates a new category filter pill in the UI toolbar with real-time app counts.
 - **Title Formatting**: Automatically formats slugs into clean title case (e.g. `audio-craft` → `AudioCraft`).
 - **Sequential Lineup Number (`num`)**: Dynamic numbering automatically continues sequentially after registered catalog apps (`16`, `17`, `18`...) so that badge numbers and grid ordering stay in sequence.
-- **Intelligent Categorization**: Detects categories based on keywords in the app slug:
+- **Intelligent Categorization Fallback**: If an app is uncataloged, detects categories based on keywords in the app slug:
   - `audio`, `sound`, `music`, `synth`, `voice`, `track` → **Audio** tab (`AUDIO WORKBENCH`)
   - `cad`, `3d`, `mesh`, `model`, `render`, `shape`, `texture` → **3D & CAD** tab (`3D WORKBENCH`)
   - `doc`, `word`, `pdf`, `text`, `sheet`, `page`, `note`, `book`, `publish` → **Documents** tab (`DOCUMENT STUDIO`)

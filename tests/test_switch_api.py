@@ -181,6 +181,14 @@ class TestSwitchVersionWorkflow(unittest.TestCase):
         # Ensure newest first
         self.assertEqual(apps[0]["releases"][0]["tag"], "v0.2.0")
 
+    def test_get_catalog_structure(self):
+        catalog = switch_api.get_catalog()
+        self.assertIsInstance(catalog, dict)
+        if catalog:
+            for app, meta in catalog.items():
+                self.assertIn("category", meta)
+                self.assertIn("categoryTag", meta)
+
 
 if __name__ == "__main__":
     unittest.main()

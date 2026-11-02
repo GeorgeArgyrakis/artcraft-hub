@@ -27,7 +27,6 @@ test('catalog.json syntax and schema validation', (t) => {
   assert.ok(keys.length > 0, 'catalog must contain applications');
 
   const requiredFields = ['repo', 'title', 'category', 'categoryTag', 'accentColor', 'tagline', 'desc'];
-  const validCategories = new Set(['graphics', 'vector', 'documents', 'audio', 'cad']);
   const hexColorRe = /^#[0-9a-fA-F]{6}$/;
 
   for (const key of keys) {
@@ -35,10 +34,9 @@ test('catalog.json syntax and schema validation', (t) => {
     t.diagnostic(`Validating catalog app: ${key}`);
 
     for (const field of requiredFields) {
-      assert.ok(item[field] && typeof item[field] === 'string', `${key} must have string field '${field}'`);
+      assert.ok(item[field] && typeof item[field] === 'string' && item[field].trim().length > 0, `${key} must have non-empty string field '${field}'`);
     }
 
-    assert.ok(validCategories.has(item.category), `${key} has unknown category '${item.category}'`);
     assert.match(item.accentColor, hexColorRe, `${key} accentColor must be #RRGGBB format`);
     assert.match(item.repo, /^[\w.-]+\/[\w.-]+$/, `${key} repo must be org/repo format`);
   }
@@ -77,4 +75,15 @@ test('bundled static assets exist for catalog apps', () => {
     const previewWebp = path.join(PREVIEWS_DIR, `${key}.webp`);
     assert.ok(fs.existsSync(previewWebp), `App '${key}' must have a preview image in previews/${key}.webp`);
   }
+});
+
+test('dynamic category resolution', () => {
+  const catalog = JSON.parse(fs.readFileSync(CATALOG_PATH, 'utf8'));
+  const categories = new Set();
+  for (const key of Object.keys(catalog)) {
+    const item = catalog[key];
+    categories.add(item.category);
+    assert.ok(typeof item.category === 'string' && item.category.trim().length > 0, `${key} category cannot be empty`);
+  }
+  assert.ok(categories.size >= 5, 'Must discover at least the default 5 ArtCraft categories');
 });

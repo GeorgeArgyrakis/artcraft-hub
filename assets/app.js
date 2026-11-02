@@ -3,14 +3,23 @@
        ------------------------------------------------------------- */
     let APP_CATALOG = {};
 
-    const CATEGORY_NAMES = {
-      all: 'All Apps',
-      graphics: 'Graphics & Photo',
-      vector: 'Vector & Design',
-      documents: 'Documents',
-      audio: 'Audio',
-      cad: '3D & CAD'
-    };
+    function formatCategorySlug(slug) {
+      if (!slug) return 'Creative App';
+      const lower = slug.toLowerCase();
+      if (lower === 'cad' || lower === '3d' || lower === '3d & cad') return '3D & CAD';
+      if (lower === 'graphics' || lower === 'graphics & photo') return 'Graphics & Photo';
+      if (lower === 'vector' || lower === 'vector & design') return 'Vector & Design';
+      if (lower === 'documents' || lower === 'docs') return 'Documents';
+      if (lower === 'audio' || lower === 'sound') return 'Audio';
+      if (/[A-Z\s&]/.test(slug)) return slug;
+      return slug
+        .replace(/[-_]/g, ' ')
+        .replace(/([a-z])([A-Z])/g, '$1 $2')
+        .split(' ')
+        .filter(Boolean)
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
+    }
 
     /* -------------------------------------------------------------
        App Catalog & Dynamic Metadata Generator
@@ -37,9 +46,8 @@
 
       if (item) {
         const title = item.title || appName;
-        const cat = item.category || 'graphics';
+        const cat = item.category ? formatCategorySlug(item.category) : 'Graphics & Photo';
         const accent = item.accentColor || '#2563eb';
-        const catName = item.categoryName || CATEGORY_NAMES[cat] || 'Creative App';
         const monogram = item.monogram || title.replace(/[^a-zA-Z0-9]/g, '').substring(0, 2).toUpperCase() || 'AC';
         const gradient = item.gradient || `linear-gradient(135deg, ${accent} 0%, #0d0f17 100%)`;
 
@@ -47,8 +55,8 @@
           num: item.num || '00',
           title: title,
           category: cat,
-          categoryName: catName,
-          categoryTag: item.categoryTag || catName.toUpperCase(),
+          categoryName: cat,
+          categoryTag: item.categoryTag || cat.toUpperCase(),
           accentColor: accent,
           tagline: item.tagline || `${title} Creative App`,
           desc: item.desc || `Open-source ${title} creative application.`,
@@ -74,25 +82,20 @@
       const mono = cleanTitle.substring(0, 2).toUpperCase() || 'AC';
 
       // Intelligent category detection from keywords
-      let category = 'graphics';
-      let categoryName = 'Graphics & Photo';
+      let category = 'Graphics & Photo';
       let categoryTag = 'CREATIVE STUDIO';
 
       if (/audio|sound|music|synth|voice|track/i.test(key)) {
-        category = 'audio';
-        categoryName = 'Audio';
+        category = 'Audio';
         categoryTag = 'AUDIO WORKBENCH';
       } else if (/cad|3d|mesh|model|render|shape|texture/i.test(key)) {
-        category = 'cad';
-        categoryName = '3D & CAD';
+        category = '3D & CAD';
         categoryTag = '3D WORKBENCH';
       } else if (/doc|word|pdf|text|sheet|page|note|book|publish/i.test(key)) {
-        category = 'documents';
-        categoryName = 'Documents';
+        category = 'Documents';
         categoryTag = 'DOCUMENT STUDIO';
       } else if (/vector|svg|draw|design|fig|ui|ux|layout|canvas/i.test(key)) {
-        category = 'vector';
-        categoryName = 'Vector & Design';
+        category = 'Vector & Design';
         categoryTag = 'VECTOR & DESIGN';
       }
 
@@ -107,10 +110,10 @@
         num: assignedNum,
         title: cleanTitle,
         category: category,
-        categoryName: categoryName,
+        categoryName: category,
         categoryTag: categoryTag,
         accentColor: palette.accent,
-        tagline: `${categoryName} Studio App`,
+        tagline: `${category} Studio App`,
         desc: `High-performance self-hosted ${cleanTitle} creative tool.`,
         monogram: mono,
         gradient: palette.grad
@@ -669,25 +672,65 @@
     }
 
     function updateCategoryCounts() {
-      const counts = { all: rawApps.length, pinned: 0, graphics: 0, vector: 0, documents: 0, cad: 0, audio: 0 };
+      // 1. Discover all unique categories
+      const categories = new Set();
+      for (const key in APP_CATALOG) {
+        const item = APP_CATALOG[key];
+        if (item && item.category) {
+          categories.add(formatCategorySlug(item.category));
+        }
+      }
+
       rawApps.forEach(app => {
         const meta = getAppMeta(app.app);
-        if (counts[meta.category] !== undefined) {
-          counts[meta.category]++;
+        if (meta.category) {
+          categories.add(meta.category);
+        }
+      });
+
+      const counts = { all: rawApps.length, pinned: 0 };
+      categories.forEach(cat => {
+        counts[cat] = 0;
+      });
+
+      rawApps.forEach(app => {
+        const meta = getAppMeta(app.app);
+        if (meta.category) {
+          counts[meta.category] = (counts[meta.category] || 0) + 1;
         }
         if (pinnedApps.has(app.app)) {
           counts.pinned++;
         }
       });
 
-      document.getElementById('count-all').textContent = counts.all;
-      document.getElementById('count-pinned').textContent = counts.pinned;
-      document.getElementById('count-graphics').textContent = counts.graphics;
-      document.getElementById('count-vector').textContent = counts.vector;
-      document.getElementById('count-documents').textContent = counts.documents;
-      document.getElementById('count-cad').textContent = counts.cad;
-      document.getElementById('count-audio').textContent = counts.audio;
-      document.getElementById('footer-total-apps').textContent = `${rawApps.length} apps installed`;
+      renderCategoryPills(categories, counts);
+
+      const footerTotal = document.getElementById('footer-total-apps');
+      if (footerTotal) footerTotal.textContent = `${rawApps.length} apps installed`;
+    }
+
+    function renderCategoryPills(categories, counts) {
+      if (!categoryPills) return;
+
+      let html = `
+        <button class="filter-pill ${currentCategory === 'all' ? 'active' : ''}" data-category="all" role="tab" aria-selected="${currentCategory === 'all'}">
+          All Tools <span class="pill-count" id="count-all">${counts.all}</span>
+        </button>
+        <button class="filter-pill ${currentCategory === 'pinned' ? 'active' : ''}" data-category="pinned" role="tab" aria-selected="${currentCategory === 'pinned'}">
+          📌 Pinned <span class="pill-count" id="count-pinned">${counts.pinned}</span>
+        </button>
+      `;
+
+      categories.forEach(cat => {
+        const isActive = currentCategory === cat;
+        html += `
+          <button class="filter-pill ${isActive ? 'active' : ''}" data-category="${escapeHtml(cat)}" role="tab" aria-selected="${isActive}">
+            ${escapeHtml(cat)} <span class="pill-count">${counts[cat] || 0}</span>
+          </button>
+        `;
+      });
+
+      categoryPills.innerHTML = html;
     }
 
     function clearFilters() {
