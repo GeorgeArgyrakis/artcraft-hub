@@ -6,11 +6,15 @@
 :80 {
     root * /data
 
-    # Required headers for SharedArrayBuffer / WASM threads
+    # Security headers (hardened + required for SharedArrayBuffer / WASM threads)
     header {
         Cross-Origin-Opener-Policy "same-origin"
         Cross-Origin-Embedder-Policy "require-corp"
         Cross-Origin-Resource-Policy "cross-origin"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
         Cache-Control "no-cache"
         -Server
     }

@@ -6,6 +6,8 @@ Endpoints:
   GET  /api/manifest           → combined manifest of all apps + system status + catalog
   GET  /api/status             → system sync status and stats
   GET  /api/catalog            → applications catalog metadata
+  GET  /api/pinned             → list of pinned app identifiers
+  POST /api/pinned             → save list of pinned app identifiers
   POST /api/sync               → trigger background sync of releases
   GET  /api/{app}/versions     → versions.json for a single app
   POST /api/{app}/switch/{tag} → atomically switch active release
@@ -19,30 +21,37 @@ import sys
 import tempfile
 import subprocess
 from datetime import datetime, timezone
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
 
-TARGET_DIR = os.environ.get("TARGET_DIR", "/data")
-SYNC_LOCK_FILE = Path("/tmp/sync.lock")
-STATUS_FILE = Path(TARGET_DIR) / ".sync_status.json"
-PINNED_FILE = Path(TARGET_DIR) / "pinned.json"
-CATALOG_FILE = Path(os.environ.get("CATALOG_FILE", "/config/catalog.json"))
-BUNDLED_CATALOG_FILE = Path("/usr/local/share/artcraft/catalog.json")
-LOCAL_CATALOG_FILE = Path(__file__).resolve().parent / "config" / "catalog.json"
+TARGET_DIR: str = os.environ.get("TARGET_DIR", "/data")
+SYNC_LOCK_FILE: Path = Path(os.environ.get("SYNC_LOCK_PATH", "/tmp/sync.lock"))
+STATUS_FILE: Path = Path(TARGET_DIR) / ".sync_status.json"
+PINNED_FILE: Path = Path(TARGET_DIR) / "pinned.json"
+CATALOG_FILE: Path = Path(os.environ.get("CATALOG_FILE", "/config/catalog.json"))
+BUNDLED_CATALOG_FILE: Path = Path("/usr/local/share/artcraft/catalog.json")
+LOCAL_CATALOG_FILE: Path = Path(__file__).resolve().parent / "config" / "catalog.json"
+SYNC_SCRIPT_PATH: Path = Path(os.environ.get("SYNC_SCRIPT_PATH", "/usr/local/bin/sync.sh"))
+
+APP_NAME_RE: re.Pattern = re.compile(r"^[A-Za-z0-9_\-]+$")
+TAG_NAME_RE: re.Pattern = re.compile(r"^[A-Za-z0-9._\-]+$")
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 def utcnow() -> str:
+    """Return ISO 8601 UTC timestamp string."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def log(method: str, path: str, status: int) -> None:
+    """Standardized request logger."""
     print(f"[{utcnow()}] {method} {path} → {status}", flush=True)
 
 
-def read_json(filepath: Path):
+def read_json(filepath: Path) -> Optional[Any]:
     """Return parsed JSON from *filepath*, or None on any error."""
     try:
         with open(filepath, "r", encoding="utf-8") as fh:
@@ -51,8 +60,9 @@ def read_json(filepath: Path):
         return None
 
 
-def write_json(filepath: Path, data) -> None:
+def write_json(filepath: Path, data: Any) -> None:
     """Atomically write *data* as JSON to *filepath*."""
+    filepath.parent.mkdir(parents=True, exist_ok=True)
     tmp_fd, tmp_path = tempfile.mkstemp(dir=filepath.parent, suffix=".tmp")
     try:
         with os.fdopen(tmp_fd, "w", encoding="utf-8") as fh:
@@ -68,6 +78,7 @@ def write_json(filepath: Path, data) -> None:
 
 def write_json_atomic_text(filepath: Path, text: str) -> None:
     """Atomically write plain text to *filepath*."""
+    filepath.parent.mkdir(parents=True, exist_ok=True)
     tmp_fd, tmp_path = tempfile.mkstemp(dir=filepath.parent, suffix=".tmp")
     try:
         with os.fdopen(tmp_fd, "w", encoding="utf-8") as fh:
@@ -81,13 +92,13 @@ def write_json_atomic_text(filepath: Path, text: str) -> None:
         raise
 
 
-def sorted_releases_newest_first(releases):
+def sorted_releases_newest_first(releases: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Sort release dicts newest-first using semver-aware tuple comparison."""
-    def _key(r):
+    def _key(r: Dict[str, Any]) -> List[Tuple[int, Union[int, str]]]:
         tag = r.get("tag", "")
         cleaned = re.sub(r"^v", "", tag, flags=re.IGNORECASE)
         parts = re.split(r"[.\-]", cleaned)
-        numeric = []
+        numeric: List[Tuple[int, Union[int, str]]] = []
         for p in parts:
             try:
                 numeric.append((0, int(p)))
@@ -98,17 +109,18 @@ def sorted_releases_newest_first(releases):
     return sorted(releases, key=_key, reverse=True)
 
 
-def get_status():
+def get_status() -> Dict[str, Any]:
     """Return status dictionary describing sync and system stats."""
-    status_data = read_json(STATUS_FILE) or {}
+    status_data: Dict[str, Any] = read_json(STATUS_FILE) or {}
     is_syncing = False
 
     if SYNC_LOCK_FILE.exists():
         try:
             pid = int(SYNC_LOCK_FILE.read_text().strip())
-            # Check if process is still active
-            os.kill(pid, 0)
-            is_syncing = True
+            # Check if process is still active (POSIX os.kill(pid, 0))
+            if hasattr(os, "kill"):
+                os.kill(pid, 0)
+                is_syncing = True
         except (ValueError, OSError):
             SYNC_LOCK_FILE.unlink(missing_ok=True)
 
@@ -116,11 +128,11 @@ def get_status():
         status_data["status"] = "idle"
 
     # Count apps on disk
-    apps_list = []
+    apps_list: List[str] = []
     base = Path(TARGET_DIR)
     if base.is_dir():
         for d in base.iterdir():
-            if d.is_dir() and (d / "versions.json").is_file():
+            if d.is_dir() and APP_NAME_RE.fullmatch(d.name) and (d / "versions.json").is_file():
                 apps_list.append(d.name)
 
     return {
@@ -134,23 +146,23 @@ def get_status():
     }
 
 
-def trigger_sync():
+def trigger_sync() -> Tuple[Dict[str, Any], int]:
     """Trigger background sync.sh execution."""
     if SYNC_LOCK_FILE.exists():
         try:
             pid = int(SYNC_LOCK_FILE.read_text().strip())
-            os.kill(pid, 0)
-            return {"ok": False, "error": "Sync is already in progress"}, 409
+            if hasattr(os, "kill"):
+                os.kill(pid, 0)
+                return {"ok": False, "error": "Sync is already in progress"}, 409
         except (ValueError, OSError):
             SYNC_LOCK_FILE.unlink(missing_ok=True)
 
-    sync_script = Path("/usr/local/bin/sync.sh")
-    if not sync_script.is_file():
-        return {"ok": False, "error": "sync.sh not found in container"}, 500
+    if not SYNC_SCRIPT_PATH.is_file():
+        return {"ok": False, "error": f"sync script not found at {SYNC_SCRIPT_PATH}"}, 500
 
     try:
         proc = subprocess.Popen(
-            ["/usr/local/bin/sync.sh"],
+            [str(SYNC_SCRIPT_PATH)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
         )
@@ -160,26 +172,31 @@ def trigger_sync():
         return {"ok": False, "error": f"Failed to execute sync script: {exc}"}, 500
 
 
-def get_pinned():
+def get_pinned() -> List[str]:
     """Return list of pinned app identifiers."""
     data = read_json(PINNED_FILE)
     if isinstance(data, list):
-        return data
+        return [str(x) for x in data if isinstance(x, (str, int))]
     if isinstance(data, dict):
-        return data.get("pinned", [])
+        pinned = data.get("pinned", [])
+        if isinstance(pinned, list):
+            return [str(x) for x in pinned if isinstance(x, (str, int))]
     return []
 
 
-def set_pinned(pinned_list):
+def set_pinned(pinned_list: Any) -> Dict[str, Any]:
     """Atomically write pinned apps list."""
     if not isinstance(pinned_list, list):
         pinned_list = []
-    cleaned = [str(x) for x in pinned_list if isinstance(x, (str, int))]
+    cleaned: List[str] = [
+        str(x) for x in pinned_list 
+        if isinstance(x, (str, int)) and APP_NAME_RE.fullmatch(str(x))
+    ]
     write_json(PINNED_FILE, {"pinned": cleaned})
     return {"ok": True, "pinned": cleaned}
 
 
-def get_catalog():
+def get_catalog() -> Dict[str, Any]:
     """Return catalog dictionary from user config, bundled share, or local repository."""
     for path in (CATALOG_FILE, BUNDLED_CATALOG_FILE, LOCAL_CATALOG_FILE):
         if path.is_file():
@@ -189,20 +206,23 @@ def get_catalog():
     return {}
 
 
-def get_manifest():
+def get_manifest() -> Dict[str, Any]:
     """Scan TARGET_DIR and return combined manifest dict."""
     base = Path(TARGET_DIR)
-    apps = []
+    apps: List[Dict[str, Any]] = []
     if not base.is_dir():
         return {"apps": apps, "system": get_status(), "pinned": get_pinned(), "catalog": get_catalog()}
+
     for app_dir in sorted(base.iterdir()):
-        if not app_dir.is_dir():
+        if not app_dir.is_dir() or not APP_NAME_RE.fullmatch(app_dir.name):
             continue
         versions_file = app_dir / "versions.json"
         data = read_json(versions_file)
-        if data is None:
+        if data is None or not isinstance(data, dict):
             continue
         releases = data.get("releases", [])
+        if not isinstance(releases, list):
+            releases = []
         apps.append({
             "app": data.get("app", app_dir.name),
             "active": data.get("active", ""),
@@ -211,23 +231,30 @@ def get_manifest():
     return {"apps": apps, "system": get_status(), "pinned": get_pinned(), "catalog": get_catalog()}
 
 
-def get_versions(app: str):
-    """Return versions.json dict for *app*, or None if not found."""
+def get_versions(app: str) -> Optional[Dict[str, Any]]:
+    """Return versions.json dict for *app*, or None if not found or invalid."""
+    if not APP_NAME_RE.fullmatch(app):
+        return None
     versions_file = Path(TARGET_DIR) / app / "versions.json"
-    return read_json(versions_file)
+    data = read_json(versions_file)
+    return data if isinstance(data, dict) else None
 
 
-def switch_version(app: str, tag: str):
+def switch_version(app: str, tag: str) -> Tuple[Dict[str, Any], int]:
     """
     Atomically switch the active release for *app* to *tag*.
+    Enforces strict path sanitization to prevent path traversal vulnerabilities.
     Returns (response_dict, http_status).
     """
+    # Strict validation of app and tag format
+    if not APP_NAME_RE.fullmatch(app):
+        return {"ok": False, "error": "invalid app identifier format"}, 400
+
+    if not TAG_NAME_RE.fullmatch(tag):
+        return {"ok": False, "error": "invalid tag format"}, 400
+
     app_dir = Path(TARGET_DIR) / app
     tag_dir = app_dir / "releases" / tag
-
-    # Validate tag format to prevent path traversal
-    if not re.fullmatch(r"[A-Za-z0-9._\-]+", tag):
-        return {"ok": False, "error": "invalid tag format"}, 400
 
     if not tag_dir.is_dir():
         return {"ok": False, "error": f"release {tag!r} not found"}, 404
@@ -255,6 +282,9 @@ def switch_version(app: str, tag: str):
     # Update versions.json
     versions_file = app_dir / "versions.json"
     data = read_json(versions_file) or {}
+    if not isinstance(data, dict):
+        data = {}
+    data["app"] = data.get("app", app)
     data["active"] = tag
     try:
         write_json(versions_file, data)
@@ -268,7 +298,7 @@ def switch_version(app: str, tag: str):
 # Request handler
 # ---------------------------------------------------------------------------
 
-CORS_HEADERS = {
+CORS_HEADERS: Dict[str, str] = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
@@ -276,21 +306,22 @@ CORS_HEADERS = {
 
 
 class SwitchAPIHandler(BaseHTTPRequestHandler):
-    server_version = "ArtCraftSwitchAPI/1.1"
+    server_version = "ArtCraftSwitchAPI/2.0"
     sys_version = ""
 
-    def log_message(self, fmt, *args):
+    def log_message(self, fmt: str, *args: Any) -> None:
+        """Suppress default stderr request logging in favor of structured log()."""
         pass
 
     # ------------------------------------------------------------------
     # Routing
     # ------------------------------------------------------------------
 
-    def do_OPTIONS(self):
+    def do_OPTIONS(self) -> None:
         self._send(200, None)
         log("OPTIONS", self.path, 200)
 
-    def do_GET(self):
+    def do_GET(self) -> None:
         path = self.path.split("?")[0].rstrip("/")
 
         # GET /api/manifest
@@ -322,7 +353,7 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
             return
 
         # GET /api/{app}/versions
-        m = re.fullmatch(r"/api/([^/]+)/versions", path)
+        m = re.fullmatch(r"/api/([A-Za-z0-9_\-]+)/versions", path)
         if m:
             app = m.group(1)
             data = get_versions(app)
@@ -337,7 +368,7 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
         self._send(404, {"error": "not found"})
         log("GET", self.path, 404)
 
-    def do_POST(self):
+    def do_POST(self) -> None:
         path = self.path.split("?")[0].rstrip("/")
 
         # POST /api/sync
@@ -363,7 +394,7 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
             return
 
         # POST /api/{app}/switch/{tag}
-        m = re.fullmatch(r"/api/([^/]+)/switch/([^/]+)", path)
+        m = re.fullmatch(r"/api/([A-Za-z0-9_\-]+)/switch/([A-Za-z0-9._\-]+)", path)
         if m:
             app, tag = m.group(1), m.group(2)
             body, status = switch_version(app, tag)
@@ -378,7 +409,7 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
     # Response helper
     # ------------------------------------------------------------------
 
-    def _send(self, status: int, body) -> None:
+    def _send(self, status: int, body: Any) -> None:
         payload = json.dumps(body).encode("utf-8") if body is not None else b""
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -394,10 +425,11 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
 # Entry point
 # ---------------------------------------------------------------------------
 
-def main():
+def main() -> None:
     host, port = "127.0.0.1", 5000
-    server = HTTPServer((host, port), SwitchAPIHandler)
-    print(f"[{utcnow()}] ArtCraft Switch API v1.1 listening on {host}:{port}  (TARGET_DIR={TARGET_DIR})", flush=True)
+    server = ThreadingHTTPServer((host, port), SwitchAPIHandler)
+    server.daemon_threads = True
+    print(f"[{utcnow()}] ArtCraft Switch API v2.0 listening on {host}:{port}  (TARGET_DIR={TARGET_DIR})", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

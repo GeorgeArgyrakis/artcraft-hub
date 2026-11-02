@@ -21,8 +21,7 @@ services:
       # Maximum number of release versions to keep per app
       MAX_RELEASES: "3"
     healthcheck:
-      # Aligned with Traefik target port (change to 80 if app listens on 80)
-      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
+      test: ["CMD", "curl", "-f", "http://localhost:80/"]
       interval: 30s
       timeout: 5s
       retries: 3
