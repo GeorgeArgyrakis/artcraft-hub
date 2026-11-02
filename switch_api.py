@@ -35,7 +35,7 @@ LOCAL_CATALOG_FILE: Path = Path(__file__).resolve().parent / "config" / "catalog
 SYNC_SCRIPT_PATH: Path = Path(os.environ.get("SYNC_SCRIPT_PATH", "/usr/local/bin/sync.sh"))
 
 APP_NAME_RE: re.Pattern = re.compile(r"^[A-Za-z0-9_\-]+$")
-TAG_NAME_RE: re.Pattern = re.compile(r"^[A-Za-z0-9._\-]+$")
+TAG_NAME_RE: re.Pattern = re.compile(r"^(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._\-]*$")
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -394,7 +394,7 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
             return
 
         # POST /api/{app}/switch/{tag}
-        m = re.fullmatch(r"/api/([A-Za-z0-9_\-]+)/switch/([A-Za-z0-9._\-]+)", path)
+        m = re.fullmatch(r"/api/([A-Za-z0-9_\-]+)/switch/([^/]+)", path)
         if m:
             app, tag = m.group(1), m.group(2)
             body, status = switch_version(app, tag)

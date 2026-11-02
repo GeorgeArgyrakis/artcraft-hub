@@ -143,6 +143,10 @@ class TestSwitchVersionWorkflow(unittest.TestCase):
         self.assertEqual(code, 400)
         self.assertFalse(resp.get("ok"))
 
+        resp, code = switch_api.switch_version("photocraft", "..")
+        self.assertEqual(code, 400)
+        self.assertFalse(resp.get("ok"))
+
     def test_get_versions(self):
         data = switch_api.get_versions("photocraft")
         self.assertIsNotNone(data)
