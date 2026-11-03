@@ -1085,7 +1085,11 @@
 
     // Keyboard shortcut '/' to search & Escape to dismiss
     window.addEventListener('keydown', (e) => {
-      if (e.key === '/' && document.activeElement !== searchInput) {
+      const activeTag = document.activeElement ? document.activeElement.tagName : '';
+      const isInputFocused = activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT' || Boolean(document.activeElement?.isContentEditable);
+      const isModalOpen = (appModal && appModal.style.display !== 'none') || (deleteModal && deleteModal.style.display !== 'none');
+
+      if (e.key === '/' && !e.ctrlKey && !e.altKey && !e.metaKey && !isInputFocused && !isModalOpen) {
         e.preventDefault();
         searchInput.focus();
         searchInput.select();
