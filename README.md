@@ -232,14 +232,14 @@ Edit `catalog.json` in the `artcraft-config` volume directly. No rebuild needed.
 |-------|----------|-------------|
 | *(key)* | ✅ | App ID (slug). Used for paths: `/data/{app}`, `/icons/{app}.webp`, etc. |
 | `repo` | ✅ | GitHub `owner/repo` to pull releases from |
-| `title` | - | Display name. Defaults to the slug in PascalCase (`audio-craft` → `AudioCraft`). |
-| `num` | - | Lineup badge number and sort order. Defaults to the next number in sequence. |
-| `category` | - | Filter tab. New categories create new tabs automatically. |
-| `categoryTag` | - | Uppercase label shown on the card |
-| `accentColor` | - | Hex color. Defaults to a palette color derived from a hash of the app name. |
-| `tagline` | - | Short subtitle |
-| `desc` | - | Card description |
-| `visible` | - | `false` hides the app from normal views. Default `true`. |
+| `title` | — | Display name. Defaults to the slug in PascalCase (`audio-craft` → `AudioCraft`). |
+| `num` | — | Lineup badge number and sort order. Defaults to the next number in sequence. |
+| `category` | — | Filter tab. New categories create new tabs automatically. |
+| `categoryTag` | — | Uppercase label shown on the card |
+| `accentColor` | — | Hex color. Defaults to a palette color derived from a hash of the app name. |
+| `tagline` | — | Short subtitle |
+| `desc` | — | Card description |
+| `visible` | — | `false` hides the app from normal views. Default `true`. |
 
 Then trigger a sync:
 
