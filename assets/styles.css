@@ -191,6 +191,33 @@
       border-color: #4e7bfb;
     }
 
+    [data-theme="artcraft"] #btn-edit-mode {
+      background: #12151f;
+      color: #cbd5e1;
+      border: 1px solid #242c3e;
+      border-radius: 3px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-weight: 600;
+      font-size: 0.76rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0.5rem 1rem;
+      transition: all 0.18s ease;
+    }
+
+    [data-theme="artcraft"] #btn-edit-mode:hover {
+      background: #191e2c;
+      color: #ffffff;
+      border-color: #4e7bfb;
+    }
+
+    [data-theme="artcraft"] #btn-edit-mode.active {
+      background: rgba(245, 158, 11, 0.16);
+      color: #fbbf24;
+      border-color: #f59e0b;
+      box-shadow: 0 0 12px rgba(245, 158, 11, 0.3);
+    }
+
     /* Category Filter Pills */
     [data-theme="artcraft"] .category-pills {
       gap: 0.45rem;
@@ -1718,40 +1745,49 @@
        Edit Suite Mode & App Management Controls
        ============================================================= */
 
-    /* Edit Mode Toggle Button */
+    /* Edit Mode Toggle Button (Glass Theme default) */
     .btn-edit-mode {
       display: inline-flex;
       align-items: center;
-      gap: 0.5rem;
-      background: var(--bg-surface);
-      color: var(--text-secondary);
+      gap: 0.45rem;
+      padding: 0.45rem 0.95rem;
+      background: var(--bg-glass);
+      color: var(--text-primary);
       border: 1px solid var(--border-subtle);
-      border-radius: var(--radius-sm);
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-weight: 600;
-      font-size: 0.76rem;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      padding: 0.5rem 0.95rem;
+      border-radius: var(--radius-full);
+      font-size: 0.8rem;
+      font-weight: 500;
+      font-family: inherit;
+      text-transform: none;
+      letter-spacing: normal;
       cursor: pointer;
       transition: all 0.2s ease;
+      backdrop-filter: blur(8px);
     }
 
     .btn-edit-mode:hover {
-      color: var(--text-primary);
-      border-color: var(--accent-indigo);
-      background: var(--bg-surface-hover);
+      background: rgba(255, 255, 255, 0.08);
+      border-color: var(--border-hover);
+      color: #ffffff;
+      box-shadow: 0 0 15px var(--border-glow);
+    }
+
+    .btn-edit-mode svg {
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
+      transition: transform 0.25s ease;
+    }
+
+    .btn-edit-mode:hover svg {
+      transform: scale(1.12);
     }
 
     .btn-edit-mode.active {
-      background: rgba(245, 158, 11, 0.16);
+      background: rgba(245, 158, 11, 0.18);
       color: #fbbf24;
-      border-color: #f59e0b;
-      box-shadow: 0 0 12px rgba(245, 158, 11, 0.3);
-    }
-
-    [data-theme="artcraft"] .btn-edit-mode {
-      border-radius: 3px;
+      border-color: rgba(245, 158, 11, 0.5);
+      box-shadow: 0 0 15px rgba(245, 158, 11, 0.25);
     }
 
     /* Edit Mode Toolbar Banner */
@@ -1902,28 +1938,24 @@
     }
 
     /* Add App Tile (Grid Item in Edit Mode) */
-    .add-app-tile {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: 220px;
+    .app-card.add-app-tile {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: center !important;
+      justify-content: center !important;
+      min-height: 280px;
       background: rgba(255, 255, 255, 0.02);
       border: 2px dashed rgba(255, 255, 255, 0.16);
       border-radius: var(--radius-md);
       cursor: pointer;
       text-align: center;
-      padding: 2rem 1.5rem;
+      padding: 2.5rem 1.5rem !important;
       transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
     }
 
-    [data-theme="artcraft"] .add-app-tile {
-      border-radius: 4px;
-      border: 1px dashed #283044;
-      background: #0f1118;
-    }
-
-    .add-app-tile:hover, .add-app-tile:focus-visible {
+    .app-card.add-app-tile:hover,
+    .app-card.add-app-tile:focus-visible {
       border-color: var(--accent-indigo);
       background: rgba(99, 102, 241, 0.06);
       transform: translateY(-2px);
@@ -1931,43 +1963,127 @@
       outline: none;
     }
 
-    [data-theme="artcraft"] .add-app-tile:hover {
-      border-color: #4e7bfb;
-      background: #131724;
-      box-shadow: 0 0 20px rgba(78, 123, 251, 0.2);
+    [data-theme="artcraft"] .app-card.add-app-tile {
+      border-radius: 0 !important;
+      border: 1px dashed #283044 !important;
+      background: #0d0f17 !important;
+      justify-content: center !important;
+      align-items: center !important;
+      padding: 2.5rem 1.5rem !important;
+      min-height: 380px;
+      transform: none;
     }
 
-    .add-tile-inner {
+    [data-theme="artcraft"] .app-card.add-app-tile:hover {
+      border-color: #4e7bfb !important;
+      outline: 1px solid #4e7bfb;
+      background: #111420 !important;
+      box-shadow: 0 0 24px rgba(78, 123, 251, 0.2);
+      transform: none;
+    }
+
+    /* Inner Container: ALWAYS Vertically and Horizontally Centered */
+    .add-app-tile-inner {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 0.65rem;
+      justify-content: center;
+      text-align: center;
+      margin: auto !important;
+      gap: 0.85rem;
+      width: 100%;
+      max-width: 260px;
     }
 
-    .add-tile-icon {
-      font-size: 2.2rem;
-      line-height: 1;
-      margin-bottom: 0.25rem;
-      filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.4));
-      transition: transform 0.2s ease;
+    .add-app-tile-icon {
+      width: 52px;
+      height: 52px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px dashed var(--border-subtle);
+      color: var(--text-primary);
+      margin-bottom: 0.2rem;
+      transition: all 0.25s ease;
     }
 
-    .add-app-tile:hover .add-tile-icon {
-      transform: scale(1.15);
+    .add-app-tile-icon svg {
+      width: 24px;
+      height: 24px;
     }
 
-    .add-tile-title {
-      font-size: 1rem;
+    .app-card.add-app-tile:hover .add-app-tile-icon {
+      background: rgba(78, 123, 251, 0.15);
+      border-color: #4e7bfb;
+      color: #4e7bfb;
+      transform: scale(1.1);
+    }
+
+    [data-theme="glass"] .app-card.add-app-tile:hover .add-app-tile-icon {
+      background: rgba(99, 102, 241, 0.15);
+      border-color: var(--accent-indigo);
+      color: var(--accent-indigo);
+    }
+
+    .add-app-tile-title {
+      font-size: 1.15rem;
       font-weight: 700;
       color: var(--text-primary);
+      margin: 0;
       letter-spacing: -0.01em;
     }
 
-    .add-tile-desc {
-      font-size: 0.8rem;
+    .add-app-tile-desc {
+      font-size: 0.82rem;
       color: var(--text-muted);
       max-width: 240px;
-      line-height: 1.4;
+      line-height: 1.45;
+      margin: 0;
+    }
+
+    .btn-add-tile-action {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 0.4rem;
+      padding: 0.45rem 1.1rem;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      color: var(--text-primary);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.74rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      cursor: pointer;
+      pointer-events: none;
+      transition: all 0.2s ease;
+    }
+
+    [data-theme="glass"] .btn-add-tile-action {
+      border-radius: var(--radius-full);
+      font-family: inherit;
+      text-transform: none;
+      letter-spacing: normal;
+      font-size: 0.8rem;
+      font-weight: 500;
+    }
+
+    .app-card.add-app-tile:hover .btn-add-tile-action {
+      background: #4e7bfb;
+      border-color: #4e7bfb;
+      color: #ffffff;
+      box-shadow: 0 0 16px rgba(78, 123, 251, 0.35);
+    }
+
+    [data-theme="glass"] .app-card.add-app-tile:hover .btn-add-tile-action {
+      background: var(--accent-indigo);
+      border-color: var(--accent-indigo);
+      color: #ffffff;
+      box-shadow: 0 0 16px rgba(99, 102, 241, 0.35);
     }
 
     /* Modal System */

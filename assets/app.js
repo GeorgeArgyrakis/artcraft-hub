@@ -655,7 +655,7 @@
           </div>
           <h3 class="add-app-tile-title">Add Application</h3>
           <p class="add-app-tile-desc">Register any GitHub WebAssembly creative repository</p>
-          <button type="button" class="btn-add-tile-action">Add Tool</button>
+          <button type="button" class="btn-add-tile-action">+ Add Application</button>
         </div>
       `;
       card.addEventListener('click', (e) => {
