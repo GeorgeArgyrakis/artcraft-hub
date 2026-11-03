@@ -29,7 +29,7 @@ A self-hosted Docker container that automatically fetches the latest WebAssembly
 The setup uses **two named Docker volumes** so your downloaded apps and configuration survive image rebuilds:
 
 - `artcraft-data` → `/data` — WASM app files, active release symlinks, icons, previews, and dashboard assets
-- `artcraft-config` → `/config` — `apps.conf` (app list) and `catalog.json` (metadata catalog)
+- `artcraft-config` → `/config` — `catalog.json` (metadata catalog & single source of truth)
 
 ---
 
@@ -90,9 +90,9 @@ If you want to modify dashboard templates, themes, or scripts locally, you can c
 git clone https://github.com/GeorgeArgyrakis/artcraft-hub.git
 cd artcraft-hub
 
-# 2. Edit the app list (one GitHub org/repo per line)
-#    The config/ directory is volume-mounted; no rebuild needed after editing.
-nano config/apps.conf
+# 2. (Optional) Customize apps or metadata in config/catalog.json
+#    The config/ directory is volume-mounted; you can also manage apps directly from the UI in Edit Mode!
+nano config/catalog.json
 
 # 3. (Optional) Set your GitHub token for higher API rate limits
 cp .env.example .env
@@ -117,40 +117,47 @@ open http://localhost:8080
 | `SYNC_CRON` | `0 0 * * *` | Cron expression for release checks. Uses standard 5-field cron syntax. Examples: `*/30 * * * *` (every 30 min), `0 */6 * * *` (every 6 hours). |
 | `TZ` | `UTC` | Timezone for the cron schedule (e.g. `Europe/Athens`, `America/New_York`). |
 | `MAX_RELEASES` | `3` | Maximum number of downloaded release versions to keep per app. Older inactive releases are pruned automatically. |
-| `CONF_FILE` | `/config/apps.conf` | Path to the app list inside the container. Override only if you have a custom volume layout. |
 | `CATALOG_FILE` | `/config/catalog.json` | Path to the metadata catalog inside the container. Override only if you have a custom volume layout. |
 | `TARGET_DIR` | `/data` | Root directory where apps are downloaded and served from. |
 
-### Adding or Removing Apps
+### Adding, Editing, and Removing Apps
 
-You can manage apps by editing volume-mounted files on the **host** without rebuilding:
+ArtCraft Hub provides multiple convenient ways to manage your applications:
 
-1. **Simple List (`config/apps.conf`)**:
-   Add or remove one `org/repo` per line:
+1. **Directly from the Dashboard (Edit Suite Mode)**:
+   Click the **"Edit Suite"** button in the top navigation bar to enter Edit Mode:
+   - **➕ Add New Application**: Click the Add tile or toolbar button. Paste any GitHub repository URL or slug (e.g. `storytold/soundcraft` or `https://github.com/storytold/soundcraft`). Click **Auto-Fill** to automatically detect and populate the application title, category, category tag, accent color, and tagline. Check **"Download & sync releases immediately"** to start the sync in the background upon saving.
+   - **👁️ Hide / Unhide**: Toggle application visibility instantly on the dashboard. Hidden applications are excluded from regular browsing views and toolbar counts, but remain accessible and editable in Edit Mode.
+   - **✏️ Edit Metadata**: Modify application titles, categories, category tags, accent colors, taglines, or descriptions on-the-fly.
+   - **🗑️ Delete & Purge Data**: Permanently remove an application from `catalog.json` and automatically purge its `/data/{app}` release files, version history, cached icons, and pinned state from disk.
+
+2. **File-Based Configuration (`config/catalog.json`)**:
+   `config/catalog.json` serves as the single source of truth for all applications and presentation metadata. You can edit it directly on the host without rebuilding:
+   ```json
+   {
+     "soundcraft": {
+       "repo": "storytold/soundcraft",
+       "title": "SoundCraft",
+       "category": "Audio",
+       "categoryTag": "AUDIO WORKBENCH",
+       "accentColor": "#06b6d4",
+       "tagline": "Multi-Track Audio Synthesizer & DAW",
+       "desc": "Full-featured audio production and sound design in WebAssembly.",
+       "visible": true
+     }
+   }
    ```
-   # config/apps.conf
-   storytold/photocraft
-   storytold/vectorcraft
-   storytold/pdfcraft
-   storytold/texturecraft
+   To trigger an immediate release sync after manually editing the file:
+   ```bash
+   docker exec artcraft-hub sync.sh
    ```
-   - Lines starting with `#` are comments and are ignored.
-   - Blank lines are ignored.
 
-2. **Metadata Catalog (`config/catalog.json`)**:
-   Optionally define or customize metadata (custom title, category, accent color, tagline, description) for any application.
-
-Changes take effect at the **next scheduled sync** (default: midnight). To apply immediately:
-
-```bash
-docker exec artcraft-hub sync.sh
-```
-
-To completely remove an app, delete or comment out its entry **and** optionally remove its directory from the data volume to reclaim disk space:
-
-```bash
-docker exec artcraft-hub rm -rf /data/photocraft
-```
+3. **Sidecar REST API**:
+   The Python sidecar API (`:5000`) provides endpoints for remote or automated management:
+   - `POST /api/catalog` — Register a new application (body: `{ "repo": "org/repo", "title": "...", "sync_now": true }`)
+   - `PUT /api/catalog/{app}` — Update application metadata
+   - `PATCH /api/catalog/{app}/visibility` — Toggle dashboard visibility (`{ "visible": false }`)
+   - `DELETE /api/catalog/{app}` — Delete catalog record and purge all downloaded data from disk
 
 ---
 
@@ -159,7 +166,7 @@ docker exec artcraft-hub rm -rf /data/photocraft
 | Volume | Mount | Contents |
 |--------|-------|----------|
 | `artcraft-data` | `/data` | Downloaded WASM apps, release history, current symlinks, icons, previews, and dashboard files |
-| `artcraft-config` | `/config` | `apps.conf` (app list) and `catalog.json` (presentation metadata) |
+| `artcraft-config` | `/config` | `catalog.json` (application catalog and presentation metadata) |
 
 Both volumes are created automatically by `docker compose up`. They persist across container restarts and image upgrades.
 
@@ -239,8 +246,7 @@ artcraft-hub/
 │   ├── logo.svg        # Suite vector logo
 │   └── logo.png        # Suite raster logo fallback
 ├── config/
-│   ├── apps.conf       # App list (volume-mounted at /config/apps.conf)
-│   └── catalog.json    # App metadata catalog (volume-mounted at /config/catalog.json)
+│   └── catalog.json    # Single source of truth for applications & presentation metadata
 ├── previews/           # Bundled UI interface preview graphics (.webp)
 ├── icons/              # Bundled app icons (.webp)
 ├── screenshots/        # Dashboard theme screenshots
@@ -254,33 +260,31 @@ artcraft-hub/
 
 The hub is designed dynamically without hardcoded application limits or fixed catalog constraints:
 
-### Adding New Applications
+### Application Management & Edit Mode
 
-You have two flexible ways to add or customize applications:
+ArtCraft Hub features a dedicated **Edit Suite Mode** built into the dashboard:
+- **Interactive Management**: Click **Edit Suite** to reveal hidden applications, access inline action overlays (hide/unhide, edit metadata, delete & purge), and open the Add Application modal.
+- **Smart GitHub Auto-Fill**: Simply type or paste a GitHub repository URL or slug. ArtCraft Hub inspects the repository name and automatically infers the application title, category, category tag, accent color, and tagline.
+- **Automatic Data Purging**: Deleting an application removes its entry from `catalog.json`, purges all cached and installed releases from `/data/{app}`, clears unpinned state, and deletes its downloaded icon.
+- **Immediate Background Sync**: Optionally start release synchronization in the background as soon as a new app is added.
 
-1. **Simple List (`config/apps.conf`)**:
-   Add any GitHub repository to `config/apps.conf` (e.g. `storytold/audiocraft` or `myorg/customcraft`):
-   ```bash
-   echo "myorg/customcraft" >> config/apps.conf
-   docker exec artcraft-hub sync.sh
-   ```
-2. **Metadata Catalog (`config/catalog.json`)**:
-   For granular control over presentation metadata (custom title, category, accent color, tagline, and description), define entries in `config/catalog.json`:
-   ```json
-   {
-     "customcraft": {
-       "repo": "myorg/customcraft",
-       "num": "16",
-       "title": "CustomCraft",
-       "category": "3D & CAD",
-       "categoryTag": "PROCEDURAL MODELING",
-       "accentColor": "#06b6d4",
-       "tagline": "Procedural 3D Modeling Studio",
-       "desc": "Next-generation procedural mesh authoring in WebAssembly."
-     }
-   }
-   ```
-The sync script automatically polls the latest release, downloads the WebAssembly archive (`*web*.zip`), symlinks `/data/{app}/current`, and updates release history in `/data/{app}/versions.json`. Repositories defined across `apps.conf` and `catalog.json` are seamlessly deduplicated and synchronized.
+Applications are persisted in `config/catalog.json`:
+```json
+{
+  "customcraft": {
+    "repo": "myorg/customcraft",
+    "num": "16",
+    "title": "CustomCraft",
+    "category": "3D & CAD",
+    "categoryTag": "PROCEDURAL MODELING",
+    "accentColor": "#06b6d4",
+    "tagline": "Procedural 3D Modeling Studio",
+    "desc": "Next-generation procedural mesh authoring in WebAssembly.",
+    "visible": true
+  }
+}
+```
+The sync script reads directly from `catalog.json`, automatically polls the latest release, downloads the WebAssembly archive (`*web*.zip`), symlinks `/data/{app}/current`, and updates release history in `/data/{app}/versions.json`.
 
 ### Dynamic Categories & Metadata Inference
 The dashboard toolbar generates category filter tabs dynamically from whatever categories are present in `catalog.json`:

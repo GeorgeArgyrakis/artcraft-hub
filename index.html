@@ -106,6 +106,14 @@
           <span id="theme-btn-label">ArtCraft Theme</span>
         </button>
 
+        <!-- Edit Mode Toggle -->
+        <button class="btn-edit-mode" id="btn-edit-mode" title="Customize suite: add, edit, hide, or delete applications" aria-label="Toggle Edit Mode">
+          <svg class="edit-icon-pen" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+          </svg>
+          <span id="btn-edit-mode-label">Edit Suite</span>
+        </button>
+
         <!-- Sync Trigger Button -->
         <button class="btn-sync" id="btn-sync-all" title="Synchronize latest releases with GitHub" aria-label="Sync Releases">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"
@@ -116,6 +124,24 @@
         </button>
       </div>
     </header>
+
+    <!-- Edit Mode Active Bar -->
+    <div class="edit-mode-bar" id="edit-mode-bar" style="display: none;" role="region" aria-label="Suite Customization Toolbar">
+      <div class="edit-mode-info">
+        <span class="edit-mode-badge">EDIT MODE</span>
+        <span class="edit-mode-text">Click eye to hide/unhide, pencil to edit, or trash to remove apps and purge data.</span>
+      </div>
+      <div class="edit-mode-actions">
+        <button class="btn-primary" id="btn-open-add-modal">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          Add Application
+        </button>
+        <button class="btn-secondary" id="btn-done-editing">Done</button>
+      </div>
+    </div>
 
     <!-- Controls Toolbar (Search & Filter) — Positioned directly below header -->
     <div class="toolbar-container" role="toolbar" aria-label="Tool Filtering and Search">
@@ -218,6 +244,105 @@
 
   <!-- Toast Notifications Container -->
   <div class="toast-container" id="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+  <!-- Add / Edit Application Modal -->
+  <div class="modal-backdrop" id="app-modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-header-titles">
+          <h3 class="modal-title" id="modal-title">Add Application</h3>
+          <span class="modal-subtitle" id="modal-subtitle">Register a WebAssembly creative app into ArtCraft Hub</span>
+        </div>
+        <button class="modal-close" id="btn-modal-close" aria-label="Close dialog">×</button>
+      </div>
+      <form class="modal-form" id="app-form" onsubmit="return false;">
+        <input type="hidden" id="form-app-key">
+        
+        <div class="form-group">
+          <label for="form-repo" class="form-label">
+            GitHub Repository <span class="required">*</span>
+            <span class="form-tip">e.g. storytold/soundcraft or https://github.com/storytold/soundcraft</span>
+          </label>
+          <div class="input-with-action">
+            <input type="text" id="form-repo" class="form-input" placeholder="owner/repo or GitHub URL" required autocomplete="off" spellcheck="false">
+            <button type="button" class="btn-auto-detect" id="btn-auto-detect" title="Auto-detect fields from repository">Auto-Fill</button>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label for="form-title" class="form-label">Application Title <span class="required">*</span></label>
+            <input type="text" id="form-title" class="form-input" placeholder="e.g. SoundCraft" required autocomplete="off">
+          </div>
+          <div class="form-group flex-1">
+            <label for="form-category" class="form-label">Category <span class="required">*</span></label>
+            <div class="category-select-wrap">
+              <input type="text" id="form-category" class="form-input" list="category-datalist" placeholder="Select or type new category" required autocomplete="off">
+              <datalist id="category-datalist"></datalist>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label for="form-tag" class="form-label">Category Tag (Header Badge)</label>
+            <input type="text" id="form-tag" class="form-input" placeholder="e.g. AUDIO WORKBENCH" autocomplete="off">
+          </div>
+          <div class="form-group flex-1">
+            <label for="form-accent" class="form-label">Accent Color</label>
+            <div class="color-picker-wrap">
+              <input type="color" id="form-accent-picker" class="color-swatch-input" value="#2563eb">
+              <input type="text" id="form-accent" class="form-input color-hex-input" placeholder="#2563eb" value="#2563eb" pattern="^#[0-9a-fA-F]{6}$">
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="form-tagline" class="form-label">Tagline</label>
+          <input type="text" id="form-tagline" class="form-input" placeholder="Short description, e.g. Multi-Track Audio Synthesizer & DAW" autocomplete="off">
+        </div>
+
+        <div class="form-group">
+          <label for="form-desc" class="form-label">Description</label>
+          <textarea id="form-desc" class="form-textarea" rows="2" placeholder="Detailed presentation text for the application."></textarea>
+        </div>
+
+        <div class="form-options">
+          <label class="checkbox-label" id="label-sync-now">
+            <input type="checkbox" id="form-sync-now" checked>
+            <span>Download & sync releases immediately</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="form-visible" checked>
+            <span>Visible on dashboard</span>
+          </label>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" id="btn-modal-cancel">Cancel</button>
+          <button type="submit" class="btn-primary" id="btn-modal-save">Save Application</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Confirm Delete Modal -->
+  <div class="modal-backdrop" id="delete-modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="delete-title">
+    <div class="modal-card modal-card-sm">
+      <div class="modal-header">
+        <h3 class="modal-title" id="delete-title">Delete Application</h3>
+        <button class="modal-close" id="btn-delete-cancel-x" aria-label="Close dialog">×</button>
+      </div>
+      <div class="modal-body">
+        <p id="delete-message">Are you sure you want to delete this application?</p>
+        <p class="delete-warning">⚠️ This will remove the catalog entry and permanently purge all downloaded releases and files from disk.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" id="btn-delete-cancel">Cancel</button>
+        <button type="button" class="btn-danger" id="btn-delete-confirm">Delete & Purge Data</button>
+      </div>
+    </div>
+  </div>
 
 </body>
 

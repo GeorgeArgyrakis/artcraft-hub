@@ -53,6 +53,7 @@
 
         return {
           num: item.num || '00',
+          repo: item.repo || `storytold/${key}`,
           title: title,
           category: cat,
           categoryName: cat,
@@ -61,7 +62,8 @@
           tagline: item.tagline || `${title} Creative App`,
           desc: item.desc || `Open-source ${title} creative application.`,
           monogram: monogram,
-          gradient: gradient
+          gradient: gradient,
+          visible: item.visible !== false
         };
       }
 
@@ -108,6 +110,7 @@
 
       const meta = {
         num: assignedNum,
+        repo: `storytold/${key}`,
         title: cleanTitle,
         category: category,
         categoryName: category,
@@ -116,7 +119,8 @@
         tagline: `${category} Studio App`,
         desc: `High-performance self-hosted ${cleanTitle} creative tool.`,
         monogram: mono,
-        gradient: palette.grad
+        gradient: palette.grad,
+        visible: true
       };
 
       dynamicAppMetaCache.set(key, meta);
@@ -196,6 +200,44 @@
     const btnSyncLabel = document.getElementById('btn-sync-label');
     const gridStatusCount = document.getElementById('grid-status-count');
     const toastContainer = document.getElementById('toast-container');
+
+    /* Edit Mode & Modal DOM references */
+    let isEditMode = false;
+    let appToDelete = null;
+
+    const btnEditMode = document.getElementById('btn-edit-mode');
+    const btnEditModeLabel = document.getElementById('btn-edit-mode-label');
+    const editModeBar = document.getElementById('edit-mode-bar');
+    const btnOpenAddModal = document.getElementById('btn-open-add-modal');
+    const btnDoneEditing = document.getElementById('btn-done-editing');
+
+    const appModal = document.getElementById('app-modal');
+    const modalTitle = document.getElementById('modal-title');
+    const modalSubtitle = document.getElementById('modal-subtitle');
+    const btnModalClose = document.getElementById('btn-modal-close');
+    const btnModalCancel = document.getElementById('btn-modal-cancel');
+    const appForm = document.getElementById('app-form');
+    const formAppKey = document.getElementById('form-app-key');
+    const formRepo = document.getElementById('form-repo');
+    const btnAutoDetect = document.getElementById('btn-auto-detect');
+    const formTitle = document.getElementById('form-title');
+    const formCategory = document.getElementById('form-category');
+    const categoryDatalist = document.getElementById('category-datalist');
+    const formTag = document.getElementById('form-tag');
+    const formAccentPicker = document.getElementById('form-accent-picker');
+    const formAccent = document.getElementById('form-accent');
+    const formTagline = document.getElementById('form-tagline');
+    const formDesc = document.getElementById('form-desc');
+    const formSyncNow = document.getElementById('form-sync-now');
+    const labelSyncNow = document.getElementById('label-sync-now');
+    const formVisible = document.getElementById('form-visible');
+    const btnModalSave = document.getElementById('btn-modal-save');
+
+    const deleteModal = document.getElementById('delete-modal');
+    const btnDeleteCancelX = document.getElementById('btn-delete-cancel-x');
+    const btnDeleteCancel = document.getElementById('btn-delete-cancel');
+    const btnDeleteConfirm = document.getElementById('btn-delete-confirm');
+    const deleteMessage = document.getElementById('delete-message');
 
     /* -------------------------------------------------------------
        Toast Notification System
@@ -280,27 +322,55 @@
        ------------------------------------------------------------- */
     function buildAppCard(appInfo) {
       const meta = getAppMeta(appInfo.app);
-      let activeTag = appInfo.active || (appInfo.releases[0] ? appInfo.releases[0].tag : 'latest');
+      let activeTag = appInfo.active || (appInfo.releases && appInfo.releases[0] ? appInfo.releases[0].tag : 'latest');
       const releases = appInfo.releases || [];
       const isPinned = pinnedApps.has(appInfo.app);
+      const isVisible = meta.visible !== false;
 
       // Find release date for active version
       const activeRelease = releases.find(r => r.tag === activeTag) || releases[0] || {};
       const updatedDate = formatDate(activeRelease.downloaded_at);
 
       const card = document.createElement('div');
-      card.className = `app-card ${isPinned ? 'is-pinned' : ''}`;
+      card.className = `app-card ${isPinned ? 'is-pinned' : ''} ${!isVisible ? 'is-hidden' : ''}`;
       card.dataset.app = appInfo.app;
       card.dataset.category = meta.category;
 
+      const editOverlayHtml = isEditMode ? `
+        <div class="card-edit-overlay">
+          <button type="button" class="card-action-btn btn-vis-toggle ${isVisible ? '' : 'is-hidden-btn'}" title="${isVisible ? 'Hide application' : 'Show application'}" data-app="${appInfo.app}">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              ${isVisible 
+                ? '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>' 
+                : '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line>'}
+            </svg>
+          </button>
+          <button type="button" class="card-action-btn btn-edit-app" title="Edit metadata" data-app="${appInfo.app}">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+            </svg>
+          </button>
+          <button type="button" class="card-action-btn btn-del-app" title="Delete application & purge data" data-app="${appInfo.app}">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
+        </div>
+      ` : '';
 
       if (currentTheme === 'artcraft') {
         const previewSvg = getAppPreviewSvg(appInfo.app);
         card.innerHTML = `
           <!-- ArtCraft Theme Top Header (Numbered box + Category Tag) -->
           <div class="artcraft-card-topbar">
-            <div class="artcraft-num-box" style="background: ${meta.accentColor || '#2563eb'};">${meta.num || '01'}</div>
-            <span class="artcraft-category-tag">${escapeHtml(meta.categoryTag || meta.categoryName.toUpperCase())}</span>
+            <div class="artcraft-topbar-left">
+              <div class="artcraft-num-box" style="background: ${meta.accentColor || '#2563eb'};">${meta.num || '01'}</div>
+              <span class="artcraft-category-tag">${escapeHtml(meta.categoryTag || meta.categoryName.toUpperCase())}</span>
+              ${!isVisible ? '<span class="hidden-badge">HIDDEN</span>' : ''}
+            </div>
+            ${editOverlayHtml}
           </div>
 
           <!-- ArtCraft Theme Preview Graphic -->
@@ -393,6 +463,7 @@
                   </svg>
                 </a>
                 <div class="card-badge-actions" style="display: flex; align-items: center; gap: 0.45rem;">
+                  ${!isVisible ? '<span class="hidden-badge">HIDDEN</span>' : ''}
                   <span class="app-category-pill">${meta.categoryName}</span>
                   <button class="btn-pin ${isPinned ? 'pinned' : ''}" id="pin-${appInfo.app}" title="${isPinned ? 'Unpin from favorites' : 'Pin to favorites'}">
                     <svg viewBox="0 0 24 24" fill="${isPinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -400,6 +471,7 @@
                       <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
                     </svg>
                   </button>
+                  ${editOverlayHtml}
                 </div>
               </div>
               <div class="app-tagline">${meta.tagline}</div>
@@ -538,6 +610,58 @@
         }
       });
 
+      // Edit Mode action button handlers
+      if (isEditMode) {
+        const visBtn = card.querySelector('.btn-vis-toggle');
+        const editBtn = card.querySelector('.btn-edit-app');
+        const delBtn = card.querySelector('.btn-del-app');
+
+        if (visBtn) {
+          visBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleAppVisibility(appInfo.app, !isVisible);
+          });
+        }
+        if (editBtn) {
+          editBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            openEditAppModal(appInfo.app);
+          });
+        }
+        if (delBtn) {
+          delBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            openDeleteModal(appInfo.app);
+          });
+        }
+      }
+
+      return card;
+    }
+
+    function buildAddAppCard() {
+      const card = document.createElement('div');
+      card.className = 'app-card add-app-tile';
+      card.innerHTML = `
+        <div class="add-app-tile-inner">
+          <div class="add-app-tile-icon">
+            <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+          </div>
+          <h3 class="add-app-tile-title">Add Application</h3>
+          <p class="add-app-tile-desc">Register any GitHub WebAssembly creative repository</p>
+          <button type="button" class="btn-add-tile-action">Add Tool</button>
+        </div>
+      `;
+      card.addEventListener('click', (e) => {
+        e.preventDefault();
+        openAddAppModal();
+      });
       return card;
     }
 
@@ -552,6 +676,11 @@
 
       const filtered = rawApps.filter(app => {
         const meta = getAppMeta(app.app);
+
+        // When not in edit mode, hide apps where visible === false
+        if (!isEditMode && meta.visible === false) {
+          return false;
+        }
 
         // Category filter
         if (currentCategory === 'pinned') {
@@ -644,7 +773,7 @@
               <div class="empty-icon">🎨</div>
               <h3 class="empty-title">No Applications Found</h3>
               <p class="empty-desc">
-                No apps have been downloaded yet. Add your repositories to <code>/config/apps.conf</code> and click "Sync Releases" to fetch them.
+                No apps have been downloaded yet. Click "Add Tool" or "Sync Releases" to get started.
               </p>
               <button class="btn-sync" onclick="triggerSync()">Sync Now</button>
             </div>
@@ -661,6 +790,9 @@
             </div>
           `;
         }
+        if (isEditMode && currentCategory !== 'pinned') {
+          appsGrid.appendChild(buildAddAppCard());
+        }
         return;
       }
 
@@ -668,6 +800,9 @@
       unpinnedList.forEach(app => {
         appsFragment.appendChild(buildAppCard(app));
       });
+      if (isEditMode && currentCategory !== 'pinned') {
+        appsFragment.appendChild(buildAddAppCard());
+      }
       appsGrid.appendChild(appsFragment);
     }
 
@@ -688,25 +823,34 @@
         }
       });
 
-      const counts = { all: rawApps.length, pinned: 0 };
+      let totalVisible = 0;
+      let pinnedVisible = 0;
+      const counts = { all: 0, pinned: 0 };
       categories.forEach(cat => {
         counts[cat] = 0;
       });
 
       rawApps.forEach(app => {
         const meta = getAppMeta(app.app);
-        if (meta.category) {
-          counts[meta.category] = (counts[meta.category] || 0) + 1;
-        }
-        if (pinnedApps.has(app.app)) {
-          counts.pinned++;
+        const shouldCount = isEditMode || meta.visible !== false;
+        if (shouldCount) {
+          totalVisible++;
+          if (meta.category) {
+            counts[meta.category] = (counts[meta.category] || 0) + 1;
+          }
+          if (pinnedApps.has(app.app)) {
+            pinnedVisible++;
+          }
         }
       });
+
+      counts.all = totalVisible;
+      counts.pinned = pinnedVisible;
 
       renderCategoryPills(categories, counts);
 
       const footerTotal = document.getElementById('footer-total-apps');
-      if (footerTotal) footerTotal.textContent = `${rawApps.length} apps installed`;
+      if (footerTotal) footerTotal.textContent = `${totalVisible} ${totalVisible === 1 ? 'app' : 'apps'} configured`;
     }
 
     function renderCategoryPills(categories, counts) {
@@ -1005,6 +1149,415 @@
     if (btnThemeToggle) {
       btnThemeToggle.addEventListener('click', toggleTheme);
     }
+
+    /* -------------------------------------------------------------
+       Edit Mode & Application Management System
+       ------------------------------------------------------------- */
+    function toggleEditMode(force) {
+      isEditMode = force !== undefined ? Boolean(force) : !isEditMode;
+
+      if (btnEditMode) {
+        btnEditMode.classList.toggle('active', isEditMode);
+        if (btnEditModeLabel) {
+          btnEditModeLabel.textContent = isEditMode ? 'Done' : 'Edit Suite';
+        }
+      }
+
+      if (editModeBar) {
+        editModeBar.style.display = isEditMode ? 'flex' : 'none';
+      }
+
+      document.body.classList.toggle('suite-editing', isEditMode);
+      updateCategoryCounts();
+      renderGrid();
+
+      if (isEditMode) {
+        showToast('Edit Mode Enabled', 'Manage apps, toggle visibility, or add new tools', 'info');
+      }
+    }
+
+    function populateCategoryDatalist() {
+      if (!categoryDatalist) return;
+      categoryDatalist.innerHTML = '';
+      const cats = new Set();
+      for (const k in APP_CATALOG) {
+        if (APP_CATALOG[k] && APP_CATALOG[k].category) {
+          cats.add(formatCategorySlug(APP_CATALOG[k].category));
+        }
+      }
+      cats.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c;
+        categoryDatalist.appendChild(opt);
+      });
+    }
+
+    function autoDetectRepoInfo(input) {
+      if (!input) return null;
+      let clean = input.trim()
+        .replace(/^https?:\/\/github\.com\//i, '')
+        .replace(/\.git$/i, '')
+        .replace(/^\/+|\/+$/g, '');
+
+      if (!clean) return null;
+      if (!clean.includes('/')) {
+        clean = `storytold/${clean}`;
+      }
+
+      const parts = clean.split('/');
+      const repo = `${parts[0]}/${parts[1]}`;
+      const slug = (parts[1] || '').toLowerCase();
+
+      const title = slug
+        .replace(/[-_]/g, ' ')
+        .replace(/([a-z])([A-Z])/g, '$1 $2')
+        .split(' ')
+        .filter(Boolean)
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+        .join('');
+
+      let category = 'Graphics & Photo';
+      let tag = 'CREATIVE STUDIO';
+
+      if (/audio|sound|music|synth|voice|track/i.test(slug)) {
+        category = 'Audio';
+        tag = 'AUDIO SYNTHESIZER & DAW';
+      } else if (/cad|3d|mesh|model|render|shape|texture/i.test(slug)) {
+        category = '3D & CAD';
+        tag = '3D PARAMETRIC CAD';
+      } else if (/doc|word|pdf|text|sheet|page|note|book|publish/i.test(slug)) {
+        category = 'Documents';
+        tag = 'DOCUMENT STUDIO';
+      } else if (/vector|svg|draw|design|fig|ui|ux|layout|canvas|craft-anything/i.test(slug)) {
+        category = 'Vector & Design';
+        tag = 'VECTOR & DESIGN';
+      }
+
+      let hash = 0;
+      for (let i = 0; i < slug.length; i++) hash = (hash * 31 + slug.charCodeAt(i)) & 0xffffffff;
+      const palette = PALETTES[Math.abs(hash) % PALETTES.length];
+
+      return {
+        app: slug,
+        repo: repo,
+        title: title,
+        category: category,
+        categoryTag: tag,
+        accentColor: palette.accent,
+        tagline: `${title} Studio App`,
+        desc: `Open-source ${title} creative application.`
+      };
+    }
+
+    function applyAutoDetectedFields(detected, forceOverwrite = false) {
+      if (!detected) return;
+      if (forceOverwrite || !formTitle.value || formTitle.dataset.autofilled === 'true') {
+        formTitle.value = detected.title;
+        formTitle.dataset.autofilled = 'true';
+      }
+      if (forceOverwrite || !formCategory.value || formCategory.dataset.autofilled === 'true') {
+        formCategory.value = detected.category;
+        formCategory.dataset.autofilled = 'true';
+      }
+      if (forceOverwrite || !formTag.value || formTag.dataset.autofilled === 'true') {
+        formTag.value = detected.categoryTag;
+        formTag.dataset.autofilled = 'true';
+      }
+      if (forceOverwrite || !formAccent.value || formAccent.dataset.autofilled === 'true') {
+        formAccent.value = detected.accentColor;
+        formAccentPicker.value = detected.accentColor;
+        formAccent.dataset.autofilled = 'true';
+      }
+      if (forceOverwrite || !formTagline.value || formTagline.dataset.autofilled === 'true') {
+        formTagline.value = detected.tagline;
+        formTagline.dataset.autofilled = 'true';
+      }
+      if (forceOverwrite || !formDesc.value || formDesc.dataset.autofilled === 'true') {
+        formDesc.value = detected.desc;
+        formDesc.dataset.autofilled = 'true';
+      }
+    }
+
+    function openAddAppModal() {
+      if (!appModal) return;
+      populateCategoryDatalist();
+      formAppKey.value = '';
+      formRepo.value = '';
+      formRepo.disabled = false;
+      formTitle.value = '';
+      formTitle.dataset.autofilled = 'false';
+      formCategory.value = '';
+      formCategory.dataset.autofilled = 'false';
+      formTag.value = '';
+      formTag.dataset.autofilled = 'false';
+      formAccent.value = '#2563eb';
+      formAccentPicker.value = '#2563eb';
+      formAccent.dataset.autofilled = 'false';
+      formTagline.value = '';
+      formTagline.dataset.autofilled = 'false';
+      formDesc.value = '';
+      formDesc.dataset.autofilled = 'false';
+      formVisible.checked = true;
+      if (formSyncNow) formSyncNow.checked = true;
+      if (labelSyncNow) labelSyncNow.style.display = 'flex';
+
+      modalTitle.textContent = 'Add Application';
+      modalSubtitle.textContent = 'Register a WebAssembly creative app into ArtCraft Hub';
+      btnModalSave.textContent = 'Add & Register App';
+
+      appModal.style.display = 'flex';
+      setTimeout(() => formRepo.focus(), 50);
+    }
+
+    function openEditAppModal(appName) {
+      if (!appModal) return;
+      populateCategoryDatalist();
+      const meta = getAppMeta(appName);
+
+      formAppKey.value = appName;
+      formRepo.value = meta.repo || `storytold/${appName}`;
+      formRepo.disabled = false;
+      formTitle.value = meta.title || appName;
+      formTitle.dataset.autofilled = 'false';
+      formCategory.value = meta.category || 'Graphics & Photo';
+      formCategory.dataset.autofilled = 'false';
+      formTag.value = meta.categoryTag || meta.category.toUpperCase();
+      formTag.dataset.autofilled = 'false';
+      const accent = meta.accentColor || '#2563eb';
+      formAccent.value = accent;
+      formAccentPicker.value = accent;
+      formAccent.dataset.autofilled = 'false';
+      formTagline.value = meta.tagline || '';
+      formTagline.dataset.autofilled = 'false';
+      formDesc.value = meta.desc || '';
+      formDesc.dataset.autofilled = 'false';
+      formVisible.checked = meta.visible !== false;
+      if (labelSyncNow) labelSyncNow.style.display = 'none';
+
+      modalTitle.textContent = `Edit ${meta.title}`;
+      modalSubtitle.textContent = `Update presentation metadata for ${appName}`;
+      btnModalSave.textContent = 'Save Changes';
+
+      appModal.style.display = 'flex';
+      setTimeout(() => formTitle.focus(), 50);
+    }
+
+    function closeAppModal() {
+      if (appModal) appModal.style.display = 'none';
+    }
+
+    async function saveAppFromModal() {
+      const isEdit = Boolean(formAppKey.value);
+      let repo = formRepo.value.trim().replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/i, '');
+      if (!repo.includes('/')) repo = `storytold/${repo}`;
+
+      const title = formTitle.value.trim();
+      const category = formCategory.value.trim() || 'Graphics & Photo';
+      const categoryTag = formTag.value.trim() || category.toUpperCase();
+      const accentColor = formAccent.value.trim() || '#2563eb';
+      const tagline = formTagline.value.trim() || `${title} Studio App`;
+      const desc = formDesc.value.trim() || `Open-source ${title} creative application.`;
+      const visible = formVisible.checked;
+      const syncNow = formSyncNow ? formSyncNow.checked : true;
+
+      const appSlug = (isEdit ? formAppKey.value : repo.split('/')[1] || repo).toLowerCase();
+
+      if (!repo || !title || !category) {
+        showToast('Validation Error', 'Repository, Title, and Category are required.', 'error');
+        return;
+      }
+
+      btnModalSave.disabled = true;
+      btnModalSave.textContent = 'Saving...';
+
+      const payload = {
+        app: appSlug,
+        repo: repo,
+        title: title,
+        category: category,
+        categoryTag: categoryTag,
+        accentColor: accentColor,
+        tagline: tagline,
+        desc: desc,
+        visible: visible,
+        sync_now: !isEdit && syncNow
+      };
+
+      try {
+        const url = isEdit ? `/api/catalog/${encodeURIComponent(appSlug)}` : '/api/catalog';
+        const method = isEdit ? 'PUT' : 'POST';
+        const res = await fetch(url, {
+          method: method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+        if (data.ok) {
+          showToast('Application Saved', `${title} has been ${isEdit ? 'updated' : 'added to the suite'}.`, 'success');
+          closeAppModal();
+          await fetchManifest();
+          if (!isEdit && syncNow) {
+            showToast('Sync Started', `Downloading latest release for ${title}...`, 'info');
+          }
+        } else {
+          showToast('Save Failed', data.error || 'Could not save application.', 'error');
+        }
+      } catch (err) {
+        showToast('Network Error', err.message, 'error');
+      } finally {
+        btnModalSave.disabled = false;
+        btnModalSave.textContent = isEdit ? 'Save Changes' : 'Add & Register App';
+      }
+    }
+
+    function openDeleteModal(appName) {
+      if (!deleteModal) return;
+      appToDelete = appName;
+      const meta = getAppMeta(appName);
+      if (deleteMessage) {
+        deleteMessage.innerHTML = `Are you sure you want to delete <strong>${escapeHtml(meta.title)}</strong>?`;
+      }
+      deleteModal.style.display = 'flex';
+    }
+
+    function closeDeleteModal() {
+      appToDelete = null;
+      if (deleteModal) deleteModal.style.display = 'none';
+    }
+
+    async function confirmDeleteApp() {
+      if (!appToDelete) return;
+      const appKey = appToDelete;
+      const meta = getAppMeta(appKey);
+
+      btnDeleteConfirm.disabled = true;
+      btnDeleteConfirm.textContent = 'Purging...';
+
+      try {
+        const res = await fetch(`/api/catalog/${encodeURIComponent(appKey)}`, {
+          method: 'DELETE'
+        });
+        const data = await res.json();
+        if (data.ok) {
+          showToast('Application Deleted', `${meta.title} was removed and all data was purged.`, 'info');
+          closeDeleteModal();
+          await fetchManifest();
+        } else {
+          showToast('Delete Failed', data.error || 'Could not delete application.', 'error');
+        }
+      } catch (err) {
+        showToast('Network Error', err.message, 'error');
+      } finally {
+        btnDeleteConfirm.disabled = false;
+        btnDeleteConfirm.textContent = 'Delete & Purge Data';
+      }
+    }
+
+    async function toggleAppVisibility(appName, newVisible) {
+      try {
+        const res = await fetch(`/api/catalog/${encodeURIComponent(appName)}/visibility`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ visible: newVisible })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          if (APP_CATALOG[appName]) {
+            APP_CATALOG[appName].visible = newVisible;
+          }
+          const meta = getAppMeta(appName);
+          meta.visible = newVisible;
+          const statusText = newVisible ? 'is now visible on dashboard' : 'is now hidden from dashboard';
+          showToast(newVisible ? 'Visible' : 'Hidden', `${meta.title} ${statusText}.`, newVisible ? 'success' : 'info');
+          updateCategoryCounts();
+          renderGrid();
+        } else {
+          showToast('Error', data.error || 'Could not update visibility.', 'error');
+        }
+      } catch (err) {
+        showToast('Network Error', err.message, 'error');
+      }
+    }
+
+    // Modal & Edit Mode Event Listeners
+    if (btnEditMode) {
+      btnEditMode.addEventListener('click', () => toggleEditMode());
+    }
+    if (btnDoneEditing) {
+      btnDoneEditing.addEventListener('click', () => toggleEditMode(false));
+    }
+    if (btnOpenAddModal) {
+      btnOpenAddModal.addEventListener('click', openAddAppModal);
+    }
+    if (btnModalClose) {
+      btnModalClose.addEventListener('click', closeAppModal);
+    }
+    if (btnModalCancel) {
+      btnModalCancel.addEventListener('click', closeAppModal);
+    }
+    if (appForm) {
+      appForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        saveAppFromModal();
+      });
+    }
+    if (btnAutoDetect) {
+      btnAutoDetect.addEventListener('click', () => {
+        const det = autoDetectRepoInfo(formRepo.value);
+        if (det) {
+          applyAutoDetectedFields(det, true);
+          showToast('Auto-Detected', `Derived fields from ${det.repo}`, 'info');
+        } else {
+          showToast('Auto-Detect', 'Please enter a valid GitHub repository first.', 'error');
+        }
+      });
+    }
+    if (formRepo) {
+      formRepo.addEventListener('blur', () => {
+        if (!formAppKey.value && formRepo.value) {
+          const det = autoDetectRepoInfo(formRepo.value);
+          if (det) applyAutoDetectedFields(det, false);
+        }
+      });
+    }
+    if (formAccentPicker && formAccent) {
+      formAccentPicker.addEventListener('input', () => {
+        formAccent.value = formAccentPicker.value;
+      });
+      formAccent.addEventListener('input', () => {
+        if (/^#[0-9a-fA-F]{6}$/.test(formAccent.value)) {
+          formAccentPicker.value = formAccent.value;
+        }
+      });
+    }
+    if (btnDeleteCancelX) {
+      btnDeleteCancelX.addEventListener('click', closeDeleteModal);
+    }
+    if (btnDeleteCancel) {
+      btnDeleteCancel.addEventListener('click', closeDeleteModal);
+    }
+    if (btnDeleteConfirm) {
+      btnDeleteConfirm.addEventListener('click', confirmDeleteApp);
+    }
+
+    // Backdrop click and Escape key dismissal
+    if (appModal) {
+      appModal.addEventListener('click', (e) => {
+        if (e.target === appModal) closeAppModal();
+      });
+    }
+    if (deleteModal) {
+      deleteModal.addEventListener('click', (e) => {
+        if (e.target === deleteModal) closeDeleteModal();
+      });
+    }
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeAppModal();
+        closeDeleteModal();
+      }
+    });
 
     /* -------------------------------------------------------------
        Initialization & Global API Exports

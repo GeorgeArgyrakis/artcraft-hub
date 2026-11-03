@@ -4,12 +4,12 @@
 #
 # Usage: fetch-icons.sh [optional-repo-or-app]
 # Example: fetch-icons.sh storytold/photocraft
-# Or run with no arguments to fetch icons for all apps in apps.conf:
+# Or run with no arguments to fetch icons for all apps in catalog.json:
 # Example: fetch-icons.sh
 
 set -Eeuo pipefail
 
-CONF_FILE="${CONF_FILE:-/config/apps.conf}"
+CATALOG_FILE="${CATALOG_FILE:-/config/catalog.json}"
 TARGET_DIR="${TARGET_DIR:-/data}"
 ICONS_DIR="${TARGET_DIR}/icons"
 
@@ -66,17 +66,8 @@ if [ "$#" -ge 1 ]; then
   fi
   fetch_single_icon "${repo_arg}"
 else
-  # Fetch for all apps in apps.conf and catalog.json
-  CATALOG_FILE="${CATALOG_FILE:-/config/catalog.json}"
+  # Fetch for all apps in catalog.json
   all_repos=()
-
-  if [ -f "${CONF_FILE}" ]; then
-    while IFS= read -r line || [ -n "${line}" ]; do
-      line="${line// /}"
-      [[ -z "${line}" || "${line}" == \#* ]] && continue
-      all_repos+=("${line}")
-    done < "${CONF_FILE}"
-  fi
 
   if [ -f "${CATALOG_FILE}" ]; then
     while IFS= read -r r || [ -n "$r" ]; do

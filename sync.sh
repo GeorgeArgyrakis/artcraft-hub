@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-CONF_FILE="${CONF_FILE:-/config/apps.conf}"
 CATALOG_FILE="${CATALOG_FILE:-/config/catalog.json}"
 TARGET_DIR="${TARGET_DIR:-/data}"
 MAX_RELEASES="${MAX_RELEASES:-3}"
@@ -22,17 +21,8 @@ trap cleanup_on_exit EXIT
 # ---------------------------------------------------------------------------
 read_apps() {
   local apps=()
-  # 1. Read from apps.conf if present
-  if [ -f "${CONF_FILE}" ]; then
-    while IFS= read -r line || [ -n "$line" ]; do
-      line=$(echo "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-      [[ "$line" =~ ^# ]] && continue
-      [[ -z "$line" ]] && continue
-      apps+=("$line")
-    done < "${CONF_FILE}"
-  fi
 
-  # 2. Read any repos defined in catalog.json
+  # Read repos defined in catalog.json
   if [ -f "${CATALOG_FILE}" ]; then
     local cat_repos
     cat_repos=$(jq -r 'to_entries[] | .value.repo // empty' "${CATALOG_FILE}" 2>/dev/null || true)
@@ -43,7 +33,7 @@ read_apps() {
   fi
 
   if [ ${#apps[@]} -eq 0 ]; then
-    echo "[WARN] No apps found in ${CONF_FILE} or ${CATALOG_FILE}. Nothing to sync." >&2
+    echo "[WARN] No apps found in ${CATALOG_FILE}. Nothing to sync." >&2
     return 1
   fi
 
@@ -237,7 +227,7 @@ sync_releases() {
   fi
 
   if [ ${#APPS[@]} -eq 0 ]; then
-    echo "[WARN] apps.conf is empty or has only comments."
+    echo "[WARN] catalog.json has no applications to sync."
     build_dashboard
     return 0
   fi

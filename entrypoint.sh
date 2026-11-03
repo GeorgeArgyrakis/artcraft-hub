@@ -1,29 +1,13 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-CONF_FILE="/config/apps.conf"
 CRONTAB_FILE="/etc/supercronic/crontab"
 CRON_SCHEDULE="${SYNC_CRON:-0 0 * * *}"
 
 echo "=== ArtCraft Hub starting ==="
 
-# Ensure config directory and default apps.conf
+# Ensure directories and default catalog.json
 mkdir -p /config /data /data/assets /data/icons /data/previews
-if [ ! -f "${CONF_FILE}" ]; then
-  if [ -f "/usr/local/share/artcraft/apps.conf" ]; then
-    cp /usr/local/share/artcraft/apps.conf "${CONF_FILE}"
-    echo "[INFO] Initialized ${CONF_FILE} from bundled template"
-  else
-    cat > "${CONF_FILE}" <<'EOF'
-# ArtCraft apps.conf
-# One GitHub org/repo per line. Example:
-storytold/photocraft
-storytold/vectorcraft
-EOF
-    echo "[INFO] Created default apps.conf at ${CONF_FILE}"
-  fi
-fi
-# Ensure default catalog.json
 if [ ! -f "/config/catalog.json" ] && [ -f "/usr/local/share/artcraft/catalog.json" ]; then
   cp /usr/local/share/artcraft/catalog.json "/config/catalog.json"
   echo "[INFO] Initialized /config/catalog.json from bundled template"

@@ -10,7 +10,6 @@ const assert = require('node:assert/strict');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 const CATALOG_PATH = path.join(ROOT_DIR, 'config', 'catalog.json');
-const APPS_CONF_PATH = path.join(ROOT_DIR, 'config', 'apps.conf');
 const ICONS_DIR = path.join(ROOT_DIR, 'icons');
 const PREVIEWS_DIR = path.join(ROOT_DIR, 'previews');
 
@@ -39,26 +38,9 @@ test('catalog.json syntax and schema validation', (t) => {
 
     assert.match(item.accentColor, hexColorRe, `${key} accentColor must be #RRGGBB format`);
     assert.match(item.repo, /^[\w.-]+\/[\w.-]+$/, `${key} repo must be org/repo format`);
-  }
-});
-
-test('apps.conf and catalog.json synchronization', () => {
-  assert.ok(fs.existsSync(APPS_CONF_PATH), 'apps.conf must exist');
-  const catalog = JSON.parse(fs.readFileSync(CATALOG_PATH, 'utf8'));
-
-  const confLines = fs.readFileSync(APPS_CONF_PATH, 'utf8')
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .filter(line => line && !line.startsWith('#'));
-
-  assert.ok(confLines.length > 0, 'apps.conf must contain applications');
-
-  for (const repo of confLines) {
-    const appName = repo.split('/')[1];
-    assert.ok(
-      catalog[appName] || catalog[appName.replace(/-/g, '')],
-      `App '${repo}' from apps.conf should exist in catalog.json`
-    );
+    if (item.visible !== undefined) {
+      assert.strictEqual(typeof item.visible, 'boolean', `${key} visible must be a boolean`);
+    }
   }
 });
 

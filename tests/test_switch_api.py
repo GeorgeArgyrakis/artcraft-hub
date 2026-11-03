@@ -78,10 +78,16 @@ class TestSwitchVersionWorkflow(unittest.TestCase):
         self.orig_target_dir = switch_api.TARGET_DIR
         self.orig_pinned_file = switch_api.PINNED_FILE
         self.orig_status_file = switch_api.STATUS_FILE
+        self.orig_catalog_file = switch_api.CATALOG_FILE
+        self.orig_local_catalog = switch_api.LOCAL_CATALOG_FILE
 
         switch_api.TARGET_DIR = self.test_dir
         switch_api.PINNED_FILE = Path(self.test_dir) / "pinned.json"
         switch_api.STATUS_FILE = Path(self.test_dir) / ".sync_status.json"
+        self.catalog_file = Path(self.test_dir) / "catalog.json"
+        switch_api.write_json(self.catalog_file, {})
+        switch_api.CATALOG_FILE = self.catalog_file
+        switch_api.LOCAL_CATALOG_FILE = self.catalog_file
 
         # Create mock app
         self.app_dir = Path(self.test_dir) / "photocraft"
@@ -108,6 +114,8 @@ class TestSwitchVersionWorkflow(unittest.TestCase):
         switch_api.TARGET_DIR = self.orig_target_dir
         switch_api.PINNED_FILE = self.orig_pinned_file
         switch_api.STATUS_FILE = self.orig_status_file
+        switch_api.CATALOG_FILE = self.orig_catalog_file
+        switch_api.LOCAL_CATALOG_FILE = self.orig_local_catalog
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
     def test_switch_version_success(self):
@@ -188,6 +196,129 @@ class TestSwitchVersionWorkflow(unittest.TestCase):
             for app, meta in catalog.items():
                 self.assertIn("category", meta)
                 self.assertIn("categoryTag", meta)
+
+
+class TestCatalogManagement(unittest.TestCase):
+    """Test dynamic catalog additions, visibility toggling, and data purging."""
+
+    def setUp(self):
+        self.test_dir = tempfile.mkdtemp(prefix="artcraft_cat_test_")
+        self.orig_target_dir = switch_api.TARGET_DIR
+        self.orig_pinned_file = switch_api.PINNED_FILE
+        self.orig_catalog_file = switch_api.CATALOG_FILE
+        self.orig_local_catalog = switch_api.LOCAL_CATALOG_FILE
+
+        switch_api.TARGET_DIR = self.test_dir
+        switch_api.PINNED_FILE = Path(self.test_dir) / "pinned.json"
+        self.catalog_file = Path(self.test_dir) / "catalog.json"
+        switch_api.CATALOG_FILE = self.catalog_file
+        switch_api.LOCAL_CATALOG_FILE = self.catalog_file
+
+        # Seed initial catalog
+        switch_api.write_json(
+            self.catalog_file,
+            {
+                "photocraft": {
+                    "repo": "storytold/photocraft",
+                    "num": "01",
+                    "title": "PhotoCraft",
+                    "category": "Graphics & Photo",
+                    "categoryTag": "IMAGE EDITOR",
+                    "accentColor": "#2563eb",
+                    "tagline": "Photo editor",
+                    "desc": "An image editor.",
+                    "visible": True,
+                }
+            },
+        )
+
+    def tearDown(self):
+        switch_api.TARGET_DIR = self.orig_target_dir
+        switch_api.PINNED_FILE = self.orig_pinned_file
+        switch_api.CATALOG_FILE = self.orig_catalog_file
+        switch_api.LOCAL_CATALOG_FILE = self.orig_local_catalog
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def test_add_catalog_app(self):
+        meta = {
+            "repo": "myorg/coolcraft",
+            "title": "CoolCraft",
+            "category": "3D & CAD",
+            "categoryTag": "3D STUDIO",
+            "accentColor": "#14b8a6",
+            "tagline": "Procedural 3D",
+            "desc": "A great 3D modeler.",
+            "visible": True,
+        }
+        res, code = switch_api.add_or_update_catalog_app("coolcraft", meta)
+        self.assertEqual(code, 200)
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["app"], "coolcraft")
+
+        # Verify saved in catalog
+        catalog = switch_api.get_catalog()
+        self.assertIn("coolcraft", catalog)
+        self.assertEqual(catalog["coolcraft"]["title"], "CoolCraft")
+        self.assertTrue(catalog["coolcraft"]["visible"])
+
+    def test_add_catalog_app_validation(self):
+        # Invalid app key
+        res, code = switch_api.add_or_update_catalog_app("../badapp", {"repo": "org/repo"})
+        self.assertEqual(code, 400)
+
+        # Invalid repo
+        res, code = switch_api.add_or_update_catalog_app("goodapp", {"repo": "not-a-repo"})
+        self.assertEqual(code, 400)
+
+    def test_set_app_visibility(self):
+        # Toggle to false
+        res, code = switch_api.set_app_visibility("photocraft", False)
+        self.assertEqual(code, 200)
+        self.assertFalse(res["visible"])
+
+        catalog = switch_api.get_catalog()
+        self.assertFalse(catalog["photocraft"]["visible"])
+
+        # Toggle back to true
+        res, code = switch_api.set_app_visibility("photocraft", True)
+        self.assertEqual(code, 200)
+        self.assertTrue(res["visible"])
+
+        # Unknown app
+        res, code = switch_api.set_app_visibility("nonexistent", True)
+        self.assertEqual(code, 404)
+
+    def test_delete_catalog_app_and_purge_data(self):
+        # Create app data directory and icon
+        app_dir = Path(self.test_dir) / "photocraft"
+        app_dir.mkdir(parents=True, exist_ok=True)
+        (app_dir / "testfile.txt").write_text("release data")
+
+        icons_dir = Path(self.test_dir) / "icons"
+        icons_dir.mkdir(parents=True, exist_ok=True)
+        icon_file = icons_dir / "photocraft.svg"
+        icon_file.write_text("<svg></svg>")
+
+        # Pin app
+        switch_api.set_pinned(["photocraft", "otherapp"])
+
+        # Call delete
+        res, code = switch_api.delete_catalog_app("photocraft")
+        self.assertEqual(code, 200)
+        self.assertTrue(res["ok"])
+
+        # Verify removed from catalog
+        catalog = switch_api.get_catalog()
+        self.assertNotIn("photocraft", catalog)
+
+        # Verify filesystem directory was purged
+        self.assertFalse(app_dir.exists())
+        self.assertFalse(icon_file.exists())
+
+        # Verify unpinned
+        pinned = switch_api.get_pinned()
+        self.assertNotIn("photocraft", pinned)
+        self.assertIn("otherapp", pinned)
 
 
 if __name__ == "__main__":

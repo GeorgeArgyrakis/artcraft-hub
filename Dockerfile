@@ -36,7 +36,6 @@ COPY --from=downloader --chmod=755 /tmp/supercronic /usr/local/bin/supercronic
 # Dashboard template, assets, and scripts
 COPY             index.html          /usr/local/share/artcraft/index.html
 COPY             favicon.ico         /usr/local/share/artcraft/favicon.ico
-COPY             config/apps.conf    /usr/local/share/artcraft/apps.conf
 COPY             config/catalog.json /usr/local/share/artcraft/catalog.json
 COPY             icons               /usr/local/share/artcraft/icons
 COPY             previews            /usr/local/share/artcraft/previews
@@ -54,7 +53,7 @@ VOLUME ["/data", "/config"]
 
 # Environment defaults (sensitive tokens like GITHUB_TOKEN passed at runtime via compose / secrets)
 ENV SYNC_CRON="0 0 * * *" \
-    CONF_FILE="/config/apps.conf" \
+    CATALOG_FILE="/config/catalog.json" \
     TARGET_DIR="/data" \
     MAX_RELEASES="3" \
     TZ=UTC

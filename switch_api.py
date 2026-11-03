@@ -1,22 +1,27 @@
 #!/usr/bin/env python3
 """
-switch_api.py – Version-switch and System Control HTTP API for ArtCraft Hub.
+switch_api.py – Version-switch, Catalog Management, and System Control HTTP API for ArtCraft Hub.
 
 Endpoints:
-  GET  /api/manifest           → combined manifest of all apps + system status + catalog
-  GET  /api/status             → system sync status and stats
-  GET  /api/catalog            → applications catalog metadata
-  GET  /api/pinned             → list of pinned app identifiers
-  POST /api/pinned             → save list of pinned app identifiers
-  POST /api/sync               → trigger background sync of releases
-  GET  /api/{app}/versions     → versions.json for a single app
-  POST /api/{app}/switch/{tag} → atomically switch active release
-  OPTIONS /api/*               → CORS preflight
+  GET    /api/manifest                   → combined manifest of all apps + system status + catalog
+  GET    /api/status                     → system sync status and stats
+  GET    /api/catalog                    → applications catalog metadata
+  POST   /api/catalog                    → add new application to catalog.json (optional sync_now)
+  PUT    /api/catalog/{app}              → update existing application in catalog.json
+  PATCH  /api/catalog/{app}/visibility   → toggle visibility (visible: true/false)
+  DELETE /api/catalog/{app}              → delete app from catalog and purge /data/{app}
+  GET    /api/pinned                     → list of pinned app identifiers
+  POST   /api/pinned                     → save list of pinned app identifiers
+  POST   /api/sync                       → trigger background sync of releases
+  GET    /api/{app}/versions             → versions.json for a single app
+  POST   /api/{app}/switch/{tag}         → atomically switch active release
+  OPTIONS /api/*                         → CORS preflight
 """
 
 import json
 import os
 import re
+import shutil
 import sys
 import tempfile
 import subprocess
@@ -36,6 +41,8 @@ SYNC_SCRIPT_PATH: Path = Path(os.environ.get("SYNC_SCRIPT_PATH", "/usr/local/bin
 
 APP_NAME_RE: re.Pattern = re.compile(r"^[A-Za-z0-9_\-]+$")
 TAG_NAME_RE: re.Pattern = re.compile(r"^(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._\-]*$")
+REPO_RE: re.Pattern = re.compile(r"^[\w.-]+/[\w.-]+$")
+HEX_COLOR_RE: re.Pattern = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -206,29 +213,152 @@ def get_catalog() -> Dict[str, Any]:
     return {}
 
 
+def get_catalog_write_path() -> Path:
+    """Determine the file path to write catalog.json updates."""
+    if CATALOG_FILE.is_file() or CATALOG_FILE.parent.is_dir():
+        return CATALOG_FILE
+    if LOCAL_CATALOG_FILE.is_file() or LOCAL_CATALOG_FILE.parent.is_dir():
+        return LOCAL_CATALOG_FILE
+    CATALOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    return CATALOG_FILE
+
+
+def save_catalog(catalog: Dict[str, Any]) -> bool:
+    """Save catalog dictionary to disk atomically."""
+    target_path = get_catalog_write_path()
+    try:
+        write_json(target_path, catalog)
+        return True
+    except Exception as exc:
+        print(f"[{utcnow()}] Error saving catalog to {target_path}: {exc}", file=sys.stderr, flush=True)
+        return False
+
+
+def add_or_update_catalog_app(app_key: str, meta: Dict[str, Any]) -> Tuple[Dict[str, Any], int]:
+    """Add or update an application record in catalog.json."""
+    if not APP_NAME_RE.fullmatch(app_key):
+        return {"ok": False, "error": f"Invalid app name '{app_key}'"}, 400
+
+    repo = (meta.get("repo") or "").strip()
+    if not repo or not REPO_RE.fullmatch(repo):
+        return {"ok": False, "error": f"Invalid or missing GitHub repo '{repo}' (expected 'owner/repo')"}, 400
+
+    title = (meta.get("title") or app_key).strip()
+    category = (meta.get("category") or "Graphics & Photo").strip()
+    category_tag = (meta.get("categoryTag") or category.upper()).strip()
+    accent_color = (meta.get("accentColor") or "#2563eb").strip()
+    if not HEX_COLOR_RE.fullmatch(accent_color):
+        accent_color = "#2563eb"
+    tagline = (meta.get("tagline") or f"{title} Creative App").strip()
+    desc = (meta.get("desc") or f"Open-source {title} creative application.").strip()
+    visible = bool(meta.get("visible", True))
+
+    catalog = get_catalog()
+    existing = catalog.get(app_key, {})
+    num = str(meta.get("num") or existing.get("num") or f"{len(catalog) + 1:02d}")
+
+    entry = {
+        "repo": repo,
+        "num": num,
+        "title": title,
+        "category": category,
+        "categoryTag": category_tag,
+        "accentColor": accent_color,
+        "tagline": tagline,
+        "desc": desc,
+        "visible": visible,
+    }
+
+    catalog[app_key] = entry
+    if not save_catalog(catalog):
+        return {"ok": False, "error": "Failed to save catalog.json"}, 500
+
+    return {"ok": True, "app": app_key, "entry": entry}, 200
+
+
+def set_app_visibility(app_key: str, visible: bool) -> Tuple[Dict[str, Any], int]:
+    """Update visibility flag for an application in catalog.json."""
+    if not APP_NAME_RE.fullmatch(app_key):
+        return {"ok": False, "error": f"Invalid app name '{app_key}'"}, 400
+
+    catalog = get_catalog()
+    if app_key not in catalog:
+        return {"ok": False, "error": f"App '{app_key}' not found in catalog"}, 404
+
+    catalog[app_key]["visible"] = bool(visible)
+    if not save_catalog(catalog):
+        return {"ok": False, "error": "Failed to save catalog.json"}, 500
+
+    return {"ok": True, "app": app_key, "visible": catalog[app_key]["visible"]}, 200
+
+
+def delete_catalog_app(app_key: str) -> Tuple[Dict[str, Any], int]:
+    """Delete an app from catalog.json and purge its files from disk."""
+    if not APP_NAME_RE.fullmatch(app_key):
+        return {"ok": False, "error": f"Invalid app name '{app_key}'"}, 400
+
+    catalog = get_catalog()
+    if app_key in catalog:
+        del catalog[app_key]
+        if not save_catalog(catalog):
+            return {"ok": False, "error": "Failed to save catalog.json"}, 500
+
+    # Purge application directory in TARGET_DIR (/data/{app})
+    app_dir = Path(TARGET_DIR) / app_key
+    if app_dir.is_dir():
+        shutil.rmtree(app_dir, ignore_errors=True)
+
+    # Purge downloaded vector master icon if present (/data/icons/{app}.svg)
+    icon_svg = Path(TARGET_DIR) / "icons" / f"{app_key}.svg"
+    if icon_svg.is_file():
+        try:
+            icon_svg.unlink()
+        except OSError:
+            pass
+
+    # Unpin if pinned
+    pinned = get_pinned()
+    if app_key in pinned:
+        set_pinned([p for p in pinned if p != app_key])
+
+    return {"ok": True, "app": app_key, "deleted": True}, 200
+
+
 def get_manifest() -> Dict[str, Any]:
-    """Scan TARGET_DIR and return combined manifest dict."""
+    """Scan TARGET_DIR and return combined manifest dict, including registered catalog apps."""
     base = Path(TARGET_DIR)
     apps: List[Dict[str, Any]] = []
-    if not base.is_dir():
-        return {"apps": apps, "system": get_status(), "pinned": get_pinned(), "catalog": get_catalog()}
+    found_apps = set()
 
-    for app_dir in sorted(base.iterdir()):
-        if not app_dir.is_dir() or not APP_NAME_RE.fullmatch(app_dir.name):
-            continue
-        versions_file = app_dir / "versions.json"
-        data = read_json(versions_file)
-        if data is None or not isinstance(data, dict):
-            continue
-        releases = data.get("releases", [])
-        if not isinstance(releases, list):
-            releases = []
-        apps.append({
-            "app": data.get("app", app_dir.name),
-            "active": data.get("active", ""),
-            "releases": sorted_releases_newest_first(releases),
-        })
-    return {"apps": apps, "system": get_status(), "pinned": get_pinned(), "catalog": get_catalog()}
+    if base.is_dir():
+        for app_dir in sorted(base.iterdir()):
+            if not app_dir.is_dir() or not APP_NAME_RE.fullmatch(app_dir.name):
+                continue
+            versions_file = app_dir / "versions.json"
+            data = read_json(versions_file)
+            if data is None or not isinstance(data, dict):
+                continue
+            releases = data.get("releases", [])
+            if not isinstance(releases, list):
+                releases = []
+            app_name = data.get("app", app_dir.name)
+            found_apps.add(app_name)
+            apps.append({
+                "app": app_name,
+                "active": data.get("active", ""),
+                "releases": sorted_releases_newest_first(releases),
+            })
+
+    catalog = get_catalog()
+    for cat_app in catalog:
+        if cat_app not in found_apps:
+            apps.append({
+                "app": cat_app,
+                "active": "",
+                "releases": [],
+            })
+
+    return {"apps": apps, "system": get_status(), "pinned": get_pinned(), "catalog": catalog}
 
 
 def get_versions(app: str) -> Optional[Dict[str, Any]]:
@@ -300,7 +430,7 @@ def switch_version(app: str, tag: str) -> Tuple[Dict[str, Any], int]:
 
 CORS_HEADERS: Dict[str, str] = {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
 }
 
@@ -393,6 +523,33 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
                 log("POST", self.path, 400)
             return
 
+        # POST /api/catalog
+        if path == "/api/catalog":
+            content_length = int(self.headers.get("Content-Length", 0))
+            payload = self.rfile.read(content_length) if content_length > 0 else b"{}"
+            try:
+                data = json.loads(payload.decode("utf-8"))
+            except Exception as e:
+                self._send(400, {"ok": False, "error": f"Invalid JSON payload: {e}"})
+                log("POST", self.path, 400)
+                return
+
+            if not isinstance(data, dict):
+                self._send(400, {"ok": False, "error": "JSON payload must be an object"})
+                log("POST", self.path, 400)
+                return
+
+            app_key = (data.get("app") or "").strip().lower()
+            if not app_key and data.get("repo"):
+                app_key = data["repo"].split("/")[-1].strip().lower()
+
+            body, status = add_or_update_catalog_app(app_key, data)
+            if status == 200 and data.get("sync_now"):
+                trigger_sync()
+            self._send(status, body)
+            log("POST", self.path, status)
+            return
+
         # POST /api/{app}/switch/{tag}
         m = re.fullmatch(r"/api/([A-Za-z0-9_\-]+)/switch/([^/]+)", path)
         if m:
@@ -404,6 +561,77 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
 
         self._send(404, {"error": "not found"})
         log("POST", self.path, 404)
+
+    def do_PUT(self) -> None:
+        path = self.path.split("?")[0].rstrip("/")
+
+        # PUT /api/catalog/{app}
+        m = re.fullmatch(r"/api/catalog/([A-Za-z0-9_\-]+)", path)
+        if m:
+            app_key = m.group(1)
+            content_length = int(self.headers.get("Content-Length", 0))
+            payload = self.rfile.read(content_length) if content_length > 0 else b"{}"
+            try:
+                data = json.loads(payload.decode("utf-8"))
+            except Exception as e:
+                self._send(400, {"ok": False, "error": f"Invalid JSON payload: {e}"})
+                log("PUT", self.path, 400)
+                return
+
+            if not isinstance(data, dict):
+                self._send(400, {"ok": False, "error": "JSON payload must be an object"})
+                log("PUT", self.path, 400)
+                return
+
+            body, status = add_or_update_catalog_app(app_key, data)
+            if status == 200 and data.get("sync_now"):
+                trigger_sync()
+            self._send(status, body)
+            log("PUT", self.path, status)
+            return
+
+        self._send(404, {"error": "not found"})
+        log("PUT", self.path, 404)
+
+    def do_PATCH(self) -> None:
+        path = self.path.split("?")[0].rstrip("/")
+
+        # PATCH /api/catalog/{app}/visibility
+        m = re.fullmatch(r"/api/catalog/([A-Za-z0-9_\-]+)/visibility", path)
+        if m:
+            app_key = m.group(1)
+            content_length = int(self.headers.get("Content-Length", 0))
+            payload = self.rfile.read(content_length) if content_length > 0 else b"{}"
+            try:
+                data = json.loads(payload.decode("utf-8"))
+            except Exception as e:
+                self._send(400, {"ok": False, "error": f"Invalid JSON payload: {e}"})
+                log("PATCH", self.path, 400)
+                return
+
+            visible = data.get("visible", True) if isinstance(data, dict) else True
+            body, status = set_app_visibility(app_key, visible)
+            self._send(status, body)
+            log("PATCH", self.path, status)
+            return
+
+        self._send(404, {"error": "not found"})
+        log("PATCH", self.path, 404)
+
+    def do_DELETE(self) -> None:
+        path = self.path.split("?")[0].rstrip("/")
+
+        # DELETE /api/catalog/{app}
+        m = re.fullmatch(r"/api/catalog/([A-Za-z0-9_\-]+)", path)
+        if m:
+            app_key = m.group(1)
+            body, status = delete_catalog_app(app_key)
+            self._send(status, body)
+            log("DELETE", self.path, status)
+            return
+
+        self._send(404, {"error": "not found"})
+        log("DELETE", self.path, 404)
 
     # ------------------------------------------------------------------
     # Response helper
