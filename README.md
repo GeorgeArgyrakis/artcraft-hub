@@ -12,7 +12,7 @@ A self-hosted Docker container that automatically fetches the latest WebAssembly
 > This is an **unofficial, community project**. It is not affiliated with or endorsed by the ArtCraft project or its authors.
 
 > [!NOTE]
-> **⚡ Vibe-coded project:** built with AI through conversational iteration. Review scripts and configuration before deploying. See the [full disclaimer](#-disclaimer).
+> **AI-assisted project:** developed with AI coding assistants and refined through manual review and editing. Please review the scripts and configuration before deploying. See the [full disclaimer](#-disclaimer).
 
 ---
 
@@ -483,13 +483,13 @@ Change `SUPERCRONIC_VERSION` and `SUPERCRONIC_SHA1SUM` in the `Dockerfile` and r
 
 ## ⚡ Disclaimer
 
-> **Built with vibes & AI.**
+> **Developed with AI assistance.**
 >
-> This project was developed through **vibe coding** with AI assistants: conceived, scaffolded, refined, and styled through conversational iteration.
+> This project was built using a mix of AI coding assistants and manual development. The AI tools helped with scaffolding, iteration, and styling. The code, configuration, and documentation were then reviewed, edited, and tested by hand.
 >
-> - **Tested & functional:** runs reliably in self-hosted home lab environments (Docker, Traefik, Caddy reverse proxy, WASM multi-threading).
-> - **Pragmatic & experimental:** prioritizes speed and practicality over enterprise boilerplate.
-> - **Provided as-is:** without warranty of any kind. Inspect the shell scripts, Dockerfile, and environment files before running anything important.
+> - **Tested in practice:** runs reliably in self-hosted home lab environments (Docker, Traefik, Caddy reverse proxy, multi-threaded WASM).
+> - **Pragmatic by design:** favors simplicity and practicality over enterprise-scale patterns.
+> - **Provided as-is:** without warranty of any kind. As with any self-hosted software, review the scripts, Dockerfile, and environment files before running it in an important environment.
 > - **Contributions welcome:** issues, pull requests, and suggestions are appreciated.
 >
 > ArtCraft and its app names, icons, and showcase graphics belong to their respective owners. This hub is an independent, unofficial project.
