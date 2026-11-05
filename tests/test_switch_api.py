@@ -160,24 +160,12 @@ class TestSwitchVersionWorkflow(unittest.TestCase):
         self.assertIsNone(switch_api.get_versions("nonexistent"))
         self.assertIsNone(switch_api.get_versions("../photocraft"))
 
-    def test_pinned_apps(self):
-        # Initial empty
-        self.assertEqual(switch_api.get_pinned(), [])
-
-        # Set valid pinned
-        switch_api.set_pinned(["photocraft", "cadcraft"])
-        self.assertEqual(switch_api.get_pinned(), ["photocraft", "cadcraft"])
-
-        # Filter malicious values
-        switch_api.set_pinned(["photocraft", "../escape", "bad;rm", 123])
-        self.assertEqual(switch_api.get_pinned(), ["photocraft", "123"])
-
     def test_get_manifest(self):
         manifest = switch_api.get_manifest()
         self.assertIn("apps", manifest)
         self.assertIn("system", manifest)
-        self.assertIn("pinned", manifest)
         self.assertIn("catalog", manifest)
+        self.assertIn("auth_required", manifest)
 
         apps = manifest["apps"]
         self.assertEqual(len(apps), 1)
