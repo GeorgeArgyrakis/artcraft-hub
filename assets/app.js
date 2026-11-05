@@ -63,7 +63,9 @@
           desc: item.desc || `Open-source ${title} creative application.`,
           monogram: monogram,
           gradient: gradient,
-          visible: item.visible !== false
+          visible: item.visible !== false,
+          icon: item.icon !== undefined ? item.icon : undefined,
+          preview: item.preview !== undefined ? item.preview : undefined
         };
       }
 
@@ -415,6 +417,69 @@
     }
 
     /* -------------------------------------------------------------
+       Icon & Preview Asset Helpers
+       ------------------------------------------------------------- */
+    function getAppIconHtml(appInfo, meta) {
+      const resolvedIcon = appInfo.icon !== undefined ? appInfo.icon : (meta && meta.icon !== undefined ? meta.icon : undefined);
+
+      if (resolvedIcon === null) {
+        return `
+          <div class="app-icon-fallback" style="background: ${meta.gradient}; display: flex;">
+            ${escapeHtml(meta.monogram)}
+          </div>
+        `;
+      }
+
+      if (typeof resolvedIcon === 'string' && resolvedIcon) {
+        return `
+          <img src="${escapeHtml(resolvedIcon)}" alt="${escapeHtml(meta.title)} Icon" class="app-icon-img"
+               onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+          <div class="app-icon-fallback" style="background: ${meta.gradient}; display: none;">
+            ${escapeHtml(meta.monogram)}
+          </div>
+        `;
+      }
+
+      return `
+        <img src="/icons/${escapeHtml(appInfo.app)}.webp" alt="${escapeHtml(meta.title)} Icon" class="app-icon-img"
+             onerror="if (this.dataset.triedSvg !== 'true') { this.dataset.triedSvg = 'true'; this.src = '/icons/${escapeHtml(appInfo.app)}.svg'; } else { this.style.display='none'; this.nextElementSibling.style.display='flex'; }">
+        <div class="app-icon-fallback" style="background: ${meta.gradient}; display: none;">
+          ${escapeHtml(meta.monogram)}
+        </div>
+      `;
+    }
+
+    function getAppPreviewHtml(appInfo, meta, previewSvg) {
+      const resolvedPreview = appInfo.preview !== undefined ? appInfo.preview : (meta && meta.preview !== undefined ? meta.preview : undefined);
+
+      if (resolvedPreview === null) {
+        return `
+          <a href="/${escapeHtml(appInfo.app)}/" class="artcraft-card-preview" target="_blank" rel="noopener" title="Launch ${escapeHtml(meta.title)}">
+            <div class="artcraft-preview-fallback" style="display: block; width: 100%; height: 100%;">
+              ${previewSvg}
+            </div>
+          </a>
+        `;
+      }
+
+      const previewSrc = typeof resolvedPreview === 'string' && resolvedPreview ? resolvedPreview : `/previews/${escapeHtml(appInfo.app)}.webp`;
+
+      return `
+        <a href="/${escapeHtml(appInfo.app)}/" class="artcraft-card-preview" target="_blank" rel="noopener" title="Launch ${escapeHtml(meta.title)}">
+          <img src="${escapeHtml(previewSrc)}" 
+               alt="${escapeHtml(meta.title)} Interface Preview" 
+               class="artcraft-preview-img" 
+               loading="lazy" 
+               decoding="async"
+               onerror="if (this.dataset.triedOnline !== 'true') { this.dataset.triedOnline = 'true'; this.src = 'https://getartcraft.com/images/apps/${escapeHtml(appInfo.app)}/${appInfo.app === 'filmcraft' ? 'color' : 'hero'}.webp'; } else { this.style.display='none'; this.nextElementSibling.style.display='block'; }">
+          <div class="artcraft-preview-fallback" style="display: none; width: 100%; height: 100%;">
+            ${previewSvg}
+          </div>
+        </a>
+      `;
+    }
+
+    /* -------------------------------------------------------------
        Card Builder
        ------------------------------------------------------------- */
     function buildAppCard(appInfo) {
@@ -471,17 +536,7 @@
           </div>
 
           <!-- ArtCraft Theme Preview Graphic -->
-          <a href="/${appInfo.app}/" class="artcraft-card-preview" target="_blank" rel="noopener" title="Launch ${meta.title}">
-            <img src="/previews/${appInfo.app}.webp" 
-                 alt="${meta.title} Interface Preview" 
-                 class="artcraft-preview-img" 
-                 loading="lazy" 
-                 decoding="async"
-                 onerror="if (this.dataset.triedOnline !== 'true') { this.dataset.triedOnline = 'true'; this.src = 'https://getartcraft.com/images/apps/${appInfo.app}/${appInfo.app === 'filmcraft' ? 'color' : 'hero'}.webp'; } else { this.style.display='none'; this.nextElementSibling.style.display='block'; }">
-            <div class="artcraft-preview-fallback" style="display: none; width: 100%; height: 100%;">
-              ${previewSvg}
-            </div>
-          </a>
+          ${getAppPreviewHtml(appInfo, meta, previewSvg)}
 
           <!-- Card Main Content -->
           <div class="card-inner-content">
@@ -489,11 +544,7 @@
             <div class="artcraft-icon-wrapper">
               <a href="/${appInfo.app}/" class="app-icon-link" target="_blank" rel="noopener" title="Launch ${meta.title}">
                 <div class="app-icon-slot" style="background: ${meta.accentColor || '#2563eb'};">
-                  <img src="/icons/${appInfo.app}.webp" alt="${meta.title} Icon" class="app-icon-img"
-                       onerror="if (this.dataset.triedSvg !== 'true') { this.dataset.triedSvg = 'true'; this.src = '/icons/${appInfo.app}.svg'; } else { this.style.display='none'; this.nextElementSibling.style.display='flex'; }">
-                  <div class="app-icon-fallback" style="background: ${meta.gradient}; display: none;">
-                    ${meta.monogram}
-                  </div>
+                  ${getAppIconHtml(appInfo, meta)}
                 </div>
               </a>
             </div>
@@ -542,11 +593,7 @@
           <div class="card-top">
             <a href="/${appInfo.app}/" class="app-icon-link" target="_blank" rel="noopener" title="Launch ${meta.title}">
               <div class="app-icon-slot" style="background: ${meta.accentColor || '#2563eb'};">
-                <img src="/icons/${appInfo.app}.webp" alt="${meta.title} Icon" class="app-icon-img"
-                     onerror="if (this.dataset.triedSvg !== 'true') { this.dataset.triedSvg = 'true'; this.src = '/icons/${appInfo.app}.svg'; } else { this.style.display='none'; this.nextElementSibling.style.display='flex'; }">
-                <div class="app-icon-fallback" style="background: ${meta.gradient}; display: none;">
-                  ${meta.monogram}
-                </div>
+                ${getAppIconHtml(appInfo, meta)}
               </div>
             </a>
             <div class="card-meta">

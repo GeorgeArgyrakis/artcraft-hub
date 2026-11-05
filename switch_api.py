@@ -327,11 +327,57 @@ def delete_catalog_app(app_key: str) -> Tuple[Dict[str, Any], int]:
     return {"ok": True, "app": app_key, "deleted": True}, 200
 
 
+def resolve_app_icon(app_name: str) -> Optional[str]:
+    """Return the relative web URL for the existing icon, or None if no icon exists."""
+    if not APP_NAME_RE.fullmatch(app_name):
+        return None
+
+    candidates = [
+        Path(TARGET_DIR) / "icons",
+        Path("/usr/local/share/artcraft/icons"),
+        Path(__file__).resolve().parent / "icons",
+    ]
+
+    for d in candidates:
+        if d.is_dir():
+            if (d / f"{app_name}.webp").is_file():
+                return f"/icons/{app_name}.webp"
+            if (d / f"{app_name}.svg").is_file():
+                return f"/icons/{app_name}.svg"
+
+    return None
+
+
+def resolve_app_preview(app_name: str) -> Optional[str]:
+    """Return the relative web URL for the existing preview graphic, or None if no preview exists."""
+    if not APP_NAME_RE.fullmatch(app_name):
+        return None
+
+    candidates = [
+        Path(TARGET_DIR) / "previews",
+        Path("/usr/local/share/artcraft/previews"),
+        Path(__file__).resolve().parent / "previews",
+    ]
+
+    for d in candidates:
+        if d.is_dir():
+            if (d / f"{app_name}.webp").is_file():
+                return f"/previews/{app_name}.webp"
+
+    return None
+
+
 def get_manifest() -> Dict[str, Any]:
     """Scan TARGET_DIR and return combined manifest dict, including registered catalog apps."""
     base = Path(TARGET_DIR)
     apps: List[Dict[str, Any]] = []
     found_apps = set()
+
+    catalog = get_catalog()
+    for cat_app, meta in catalog.items():
+        if isinstance(meta, dict):
+            meta["icon"] = resolve_app_icon(cat_app)
+            meta["preview"] = resolve_app_preview(cat_app)
 
     if base.is_dir():
         for app_dir in sorted(base.iterdir()):
@@ -350,15 +396,18 @@ def get_manifest() -> Dict[str, Any]:
                 "app": app_name,
                 "active": data.get("active", ""),
                 "releases": sorted_releases_newest_first(releases),
+                "icon": resolve_app_icon(app_name),
+                "preview": resolve_app_preview(app_name),
             })
 
-    catalog = get_catalog()
     for cat_app in catalog:
         if cat_app not in found_apps:
             apps.append({
                 "app": cat_app,
                 "active": "",
                 "releases": [],
+                "icon": resolve_app_icon(cat_app),
+                "preview": resolve_app_preview(cat_app),
             })
 
     return {

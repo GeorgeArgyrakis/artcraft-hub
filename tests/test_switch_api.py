@@ -170,9 +170,38 @@ class TestSwitchVersionWorkflow(unittest.TestCase):
         apps = manifest["apps"]
         self.assertEqual(len(apps), 1)
         self.assertEqual(apps[0]["app"], "photocraft")
+        self.assertIn("icon", apps[0])
+        self.assertIn("preview", apps[0])
         self.assertEqual(len(apps[0]["releases"]), 2)
         # Ensure newest first
         self.assertEqual(apps[0]["releases"][0]["tag"], "v0.2.0")
+
+    def test_resolve_app_icon_and_preview(self):
+        icons_dir = Path(self.test_dir) / "icons"
+        previews_dir = Path(self.test_dir) / "previews"
+        icons_dir.mkdir(parents=True, exist_ok=True)
+        previews_dir.mkdir(parents=True, exist_ok=True)
+
+        # WebP icon takes priority
+        (icons_dir / "photocraft.webp").write_bytes(b"webp-data")
+        (icons_dir / "photocraft.svg").write_text("<svg></svg>")
+        self.assertEqual(switch_api.resolve_app_icon("photocraft"), "/icons/photocraft.webp")
+
+        # SVG icon when webp is absent
+        (icons_dir / "texturecraft.svg").write_text("<svg></svg>")
+        self.assertEqual(switch_api.resolve_app_icon("texturecraft"), "/icons/texturecraft.svg")
+
+        # None when no icon exists
+        self.assertIsNone(switch_api.resolve_app_icon("solidcraft"))
+
+        # Preview resolution
+        (previews_dir / "photocraft.webp").write_bytes(b"preview-data")
+        self.assertEqual(switch_api.resolve_app_preview("photocraft"), "/previews/photocraft.webp")
+        self.assertIsNone(switch_api.resolve_app_preview("solidcraft"))
+
+        # Path traversal / invalid names
+        self.assertIsNone(switch_api.resolve_app_icon("../photocraft"))
+        self.assertIsNone(switch_api.resolve_app_preview("../photocraft"))
 
     def test_get_catalog_structure(self):
         catalog = switch_api.get_catalog()
