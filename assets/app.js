@@ -216,21 +216,35 @@
 
     function openAuthModal(onSuccess) {
       pendingAuthAction = onSuccess || null;
-      if (authPasswordInput) authPasswordInput.value = '';
+      if (authPasswordSlot) {
+        authPasswordSlot.innerHTML = `
+          <input type="password" id="admin-password-input" class="form-input" 
+                 placeholder="Enter admin password..." 
+                 autocomplete="off" 
+                 data-1p-ignore="true" 
+                 data-lpignore="true" 
+                 data-bwignore="true" 
+                 required>
+        `;
+      }
+      const input = getAuthPasswordInput();
+      if (input) input.value = '';
       if (authErrorMsg) authErrorMsg.style.display = 'none';
       if (authModal) {
         authModal.style.display = 'flex';
-        setTimeout(() => authPasswordInput?.focus(), 60);
+        setTimeout(() => getAuthPasswordInput()?.focus(), 60);
       }
     }
 
     function closeAuthModal() {
       if (authModal) authModal.style.display = 'none';
+      if (authPasswordSlot) authPasswordSlot.innerHTML = '';
       pendingAuthAction = null;
     }
 
     async function verifyAndSubmitAuth() {
-      const pw = (authPasswordInput ? authPasswordInput.value : '').trim();
+      const input = getAuthPasswordInput();
+      const pw = (input ? input.value : '').trim();
       if (!pw) return;
 
       if (btnAuthSubmit) btnAuthSubmit.disabled = true;
@@ -253,7 +267,8 @@
             authErrorMsg.textContent = 'Invalid admin password. Please try again.';
             authErrorMsg.style.display = 'block';
           }
-          if (authPasswordInput) authPasswordInput.select();
+          const inp = getAuthPasswordInput();
+          if (inp) inp.select();
         }
       } catch (err) {
         if (authErrorMsg) {
@@ -304,7 +319,8 @@
     /* Auth Modal DOM references */
     const authModal = document.getElementById('auth-modal');
     const authForm = document.getElementById('auth-form');
-    const authPasswordInput = document.getElementById('admin-password-input');
+    const authPasswordSlot = document.getElementById('auth-password-slot');
+    const getAuthPasswordInput = () => document.getElementById('admin-password-input');
     const authErrorMsg = document.getElementById('auth-error-msg');
     const btnAuthClose = document.getElementById('btn-auth-close');
     const btnAuthCancel = document.getElementById('btn-auth-cancel');
