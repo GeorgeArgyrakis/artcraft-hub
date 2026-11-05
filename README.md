@@ -85,6 +85,8 @@ services:
       - TZ=UTC
       # Maximum number of release versions to retain per app
       - MAX_RELEASES=3
+      # Optional: Admin password for app management, release switching, and sync actions
+      - ADMIN_PASSWORD=
 
 volumes:
   artcraft-data:
@@ -141,24 +143,33 @@ Caddy obtains a certificate automatically and forwards upstream headers unchange
 
 ## 🛡️ Security
 
-> [!CAUTION]
-> **Port 80 gives full administrative access.** The hub has **no built-in authentication**. Caddy forwards `/api/*` to the internal management API, so anyone who can open the dashboard can also add apps, switch releases, trigger syncs, and **permanently delete downloaded data**.
+> [!TIP]
+> **Optional Admin Password Protection:**
+> By default, `ADMIN_PASSWORD` is unset or empty, keeping the hub open and backwards-compatible with zero authentication prompts.
+> Setting `ADMIN_PASSWORD` protects all mutating actions: registering apps, editing metadata, toggling visibility, deleting apps/purging data, switching release versions, and triggering syncs.
+> Dashboard viewing, app launching, searching, and per-browser local favorites always remain public.
 
-Endpoints reachable through the dashboard port include:
+When `ADMIN_PASSWORD` is configured:
+- Entering **Edit Mode** or switching releases on the dashboard prompts for the admin password, stored in browser `sessionStorage` until locked or closed.
+- State-changing API endpoints require either the `X-Admin-Password: <password>` or `Authorization: Bearer <password>` header.
+- Failed verification uses timing attack mitigation (`hmac.compare_digest`) and throttles brute-force attempts with a 1-second delay.
+
+Endpoints guarded when `ADMIN_PASSWORD` is set:
 
 | Method | Endpoint | Effect |
 |--------|----------|--------|
 | `POST` | `/api/catalog` | Register a new app (and optionally download it) |
-| `PUT` / `PATCH` | `/api/catalog/{app}` | Change metadata or visibility |
+| `PUT` | `/api/catalog/{app}` | Update metadata |
+| `PATCH` | `/api/catalog/{app}/visibility` | Show or hide an app |
 | `DELETE` | `/api/catalog/{app}` | Remove an app **and purge its data from disk** |
 | `POST` | `/api/sync` | Trigger a release sync |
 | `POST` | `/api/{app}/switch/{tag}` | Switch the active release |
-| `POST` | `/api/pinned` | Overwrite the server-wide pinned defaults |
+| `POST` | `/api/verify-auth` | Test credentials against the server (`200 OK` or `401 Unauthorized`) |
 
 Recommendations:
 
-- **Do not expose the hub directly to the internet.**
-- If it is reachable from anywhere other than a trusted LAN, put it behind an authentication layer at the reverse proxy, such as [Authelia](https://www.authelia.com/), [Authentik](https://goauthentik.io/), or Traefik/Caddy basic auth.
+- **Always serve behind HTTPS** when exposing the hub outside `localhost` so credentials and `SharedArrayBuffer` remain secure.
+- If you leave `ADMIN_PASSWORD` empty on a public or shared network, anyone can add or delete apps.
 - The Python API on port `5000` is meant to be reached only through Caddy. Do not publish port `5000` on the host.
 - Use a `GITHUB_TOKEN` with **no scopes** (public repos only need read access to release metadata).
 
@@ -173,6 +184,7 @@ Recommendations:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `GITHUB_TOKEN` | *(empty)* | GitHub personal access token. Without it: 60 requests/hour. With it: 5,000/hour. Create one under **Settings → Developer settings → Personal access tokens** (no scopes needed). |
+| `ADMIN_PASSWORD` | *(empty)* | Optional password to protect app management, release switching, and sync actions. When empty or unset, management is unrestricted. |
 | `SYNC_CRON` | `0 0 * * *` | Standard 5-field cron expression for release checks. Examples: `*/30 * * * *` (every 30 min), `0 */6 * * *` (every 6 hours). |
 | `TZ` | `UTC` | Timezone for the cron schedule (e.g. `Europe/Athens`). |
 | `MAX_RELEASES` | `3` | Number of release versions kept per app. Older inactive releases are pruned automatically. |
@@ -201,12 +213,13 @@ An app can be added only if its GitHub repository publishes **releases** that in
 
 ### Option 1: Dashboard (Edit Mode)
 
-Click **Edit Suite** in the top navigation bar:
+Click **Edit Suite** in the top navigation bar (if `ADMIN_PASSWORD` is configured, you will be prompted to enter the password to unlock management):
 
 - **➕ Add**: paste a GitHub URL or slug (e.g. `storytold/soundcraft`). Click **Auto-Fill** to infer the title, category, accent color, and tagline. Tick **Download & sync releases immediately** to start syncing on save.
 - **✏️ Edit**: change title, category, tag, accent color, tagline, or description.
 - **👁️ Hide / Unhide**: hidden apps are excluded from browsing views and counts but stay editable in Edit Mode.
-- **🗑️ Delete & Purge**: removes the app from `catalog.json` and deletes its releases, version history, icon, and pinned state from disk. **This cannot be undone.**
+- **🗑️ Delete & Purge**: removes the app from `catalog.json` and deletes its releases, version history, and icon from disk. **This cannot be undone.**
+- **🔒 Lock Session**: click the lock icon in the edit mode bar to clear the stored session password at any time.
 
 ### Option 2: `catalog.json`
 
@@ -266,12 +279,15 @@ The management API (port `5000` inside the container) supports automation:
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
+| `POST` | `/api/verify-auth` | Validate admin password (`200 OK` or `401 Unauthorized`) |
 | `POST` | `/api/catalog` | Register an app. Body: `{ "repo": "org/repo", "title": "...", "sync_now": true }` |
 | `PUT` | `/api/catalog/{app}` | Update metadata |
 | `PATCH` | `/api/catalog/{app}/visibility` | Show/hide. Body: `{ "visible": false }` |
 | `DELETE` | `/api/catalog/{app}` | Delete the catalog entry **and purge all downloaded data** |
+| `POST` | `/api/sync` | Trigger a background release check |
+| `POST` | `/api/{app}/switch/{tag}` | Atomically repoint the `current` symlink to another downloaded release |
 
-> See [Security](#-security) before making the API reachable.
+> When `ADMIN_PASSWORD` is configured, all mutating endpoints (`POST`, `PUT`, `PATCH`, `DELETE`) require the `X-Admin-Password: <password>` header or `Authorization: Bearer <password>`. See [Security](#-security).
 
 ---
 
@@ -295,9 +311,7 @@ The management API (port `5000` inside the container) supports automation:
 
 - Click the 📌 icon on a card to pin it. Pinned apps float to the top of every category view.
 - The **📌 Pinned** tab shows only pinned apps.
-- Pins are stored **per browser** (`localStorage`) and mirrored to `/data/pinned.json` on the server.
-- The server copy acts as the **default for new browsers** (or private windows) that have no local pins yet.
-- Every pin change overwrites the server copy, but it never overwrites the local pins of other browsers. In a multi-user setup, each browser keeps its own pins and the server copy reflects the most recent change.
+- Pins are stored per browser in `localStorage` (`artcraft_pinned_apps`). Each user and browser maintains their own favorite apps independently without altering server state.
 
 ### Manual sync
 
@@ -418,7 +432,7 @@ Then open http://localhost:8080.
 | **Caddy 2** | Serves static WASM apps from `/data` with COOP/COEP headers, MIME types, and clean app URL rewrites |
 | **Supercronic** | Container-friendly cron daemon that runs `sync.sh` on `SYNC_CRON` |
 | **sync.sh** | Polls the GitHub Releases API, downloads and unpacks `*web*.zip` assets, updates `/data/{app}/versions.json`, repoints `current`, prunes old releases |
-| **switch_api.py** | Python sidecar API (`:5000`) for manifests, atomic release switching, sync triggers, catalog management, and pins |
+| **switch_api.py** | Python sidecar API (`:5000`) for manifests, atomic release switching, sync triggers, catalog management, and admin auth |
 
 ### Project structure
 

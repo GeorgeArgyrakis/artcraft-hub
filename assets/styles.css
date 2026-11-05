@@ -2186,6 +2186,17 @@
       line-height: 1.4;
     }
 
+    .auth-error-message {
+      margin-top: 0.65rem;
+      padding: 0.65rem 0.85rem;
+      border-radius: 4px;
+      background: rgba(244, 63, 94, 0.12);
+      border: 1px solid rgba(244, 63, 94, 0.3);
+      color: #fda4af;
+      font-size: 0.82rem;
+      line-height: 1.4;
+    }
+
     .modal-form {
       padding: 1.35rem 1.5rem;
       display: flex;

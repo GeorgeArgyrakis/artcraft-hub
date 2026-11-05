@@ -20,6 +20,8 @@ services:
       TZ: "Europe/Athens"
       # Maximum number of release versions to keep per app
       MAX_RELEASES: "3"
+      # Optional admin password for protecting app management and sync actions (leave empty for open access)
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:80/"]
       interval: 30s

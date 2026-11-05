@@ -163,11 +163,6 @@
 
     function savePinnedApps() {
       localStorage.setItem('artcraft_pinned_apps', JSON.stringify([...pinnedApps]));
-      fetch('/api/pinned', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pinned: [...pinnedApps] })
-      }).catch(() => { });
     }
 
     function togglePin(appName) {
@@ -182,6 +177,98 @@
       savePinnedApps();
       updateCategoryCounts();
       renderGrid();
+    }
+
+    /* Admin Authentication State & Helpers */
+    const ADMIN_PW_KEY = 'artcraft_admin_pw';
+    let isAuthRequired = false;
+    let pendingAuthAction = null;
+
+    function getAdminPassword() {
+      return sessionStorage.getItem(ADMIN_PW_KEY) || '';
+    }
+
+    function setAdminPassword(pw) {
+      if (pw) {
+        sessionStorage.setItem(ADMIN_PW_KEY, pw);
+      } else {
+        sessionStorage.removeItem(ADMIN_PW_KEY);
+      }
+      updateLockBtnVisibility();
+    }
+
+    function updateLockBtnVisibility() {
+      if (btnLockSession) {
+        btnLockSession.style.display = (isAuthRequired && getAdminPassword()) ? 'inline-flex' : 'none';
+      }
+    }
+
+    function getApiHeaders(extraHeaders = {}) {
+      const headers = { 'Content-Type': 'application/json', ...extraHeaders };
+      const pw = getAdminPassword();
+      if (pw) {
+        headers['X-Admin-Password'] = pw;
+      }
+      return headers;
+    }
+
+    function openAuthModal(onSuccess) {
+      pendingAuthAction = onSuccess || null;
+      if (authPasswordInput) authPasswordInput.value = '';
+      if (authErrorMsg) authErrorMsg.style.display = 'none';
+      if (authModal) {
+        authModal.style.display = 'flex';
+        setTimeout(() => authPasswordInput?.focus(), 60);
+      }
+    }
+
+    function closeAuthModal() {
+      if (authModal) authModal.style.display = 'none';
+      pendingAuthAction = null;
+    }
+
+    async function verifyAndSubmitAuth() {
+      const pw = (authPasswordInput ? authPasswordInput.value : '').trim();
+      if (!pw) return;
+
+      if (btnAuthSubmit) btnAuthSubmit.disabled = true;
+      try {
+        const res = await fetch('/api/verify-auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Admin-Password': pw }
+        });
+        if (res.ok) {
+          setAdminPassword(pw);
+          closeAuthModal();
+          showToast('Authenticated', 'Admin session unlocked', 'success');
+          if (pendingAuthAction) {
+            const action = pendingAuthAction;
+            pendingAuthAction = null;
+            action();
+          }
+        } else {
+          if (authErrorMsg) {
+            authErrorMsg.textContent = 'Invalid admin password. Please try again.';
+            authErrorMsg.style.display = 'block';
+          }
+          if (authPasswordInput) authPasswordInput.select();
+        }
+      } catch (err) {
+        if (authErrorMsg) {
+          authErrorMsg.textContent = 'Connection error during authentication.';
+          authErrorMsg.style.display = 'block';
+        }
+      } finally {
+        if (btnAuthSubmit) btnAuthSubmit.disabled = false;
+      }
+    }
+
+    function lockAdminSession() {
+      setAdminPassword('');
+      if (isEditMode) {
+        toggleEditMode(false);
+      }
+      showToast('Locked', 'Admin session locked', 'info');
     }
 
     /* DOM references */
@@ -209,7 +296,17 @@
     const btnEditModeLabel = document.getElementById('btn-edit-mode-label');
     const editModeBar = document.getElementById('edit-mode-bar');
     const btnOpenAddModal = document.getElementById('btn-open-add-modal');
+    const btnLockSession = document.getElementById('btn-lock-session');
     const btnDoneEditing = document.getElementById('btn-done-editing');
+
+    /* Auth Modal DOM references */
+    const authModal = document.getElementById('auth-modal');
+    const authForm = document.getElementById('auth-form');
+    const authPasswordInput = document.getElementById('admin-password-input');
+    const authErrorMsg = document.getElementById('auth-error-msg');
+    const btnAuthClose = document.getElementById('btn-auth-close');
+    const btnAuthCancel = document.getElementById('btn-auth-cancel');
+    const btnAuthSubmit = document.getElementById('btn-auth-submit');
 
     const appModal = document.getElementById('app-modal');
     const modalTitle = document.getElementById('modal-title');
@@ -547,32 +644,47 @@
 
             if (r.tag === activeTag) return;
 
-            chipBtn.disabled = true;
-            try {
-              const res = await fetch(`/api/${appInfo.app}/switch/${encodeURIComponent(r.tag)}`, {
-                method: 'POST'
-              });
-              const data = await res.json();
+            const performSwitch = async () => {
+              chipBtn.disabled = true;
+              try {
+                const res = await fetch(`/api/${appInfo.app}/switch/${encodeURIComponent(r.tag)}`, {
+                  method: 'POST',
+                  headers: getApiHeaders()
+                });
 
-              if (data.ok) {
-                activeTag = r.tag;
-                tagTextEl.textContent = activeTag;
-                if (r.downloaded_at && dateEl) {
-                  if (currentTheme === 'artcraft') {
-                    dateEl.textContent = `UPDATED ${formatDate(r.downloaded_at).toUpperCase()}`;
-                  } else {
-                    dateEl.textContent = `Updated ${formatDate(r.downloaded_at)}`;
-                  }
+                if (res.status === 401) {
+                  setAdminPassword('');
+                  openAuthModal(performSwitch);
+                  return;
                 }
-                renderVersionMenu();
-                showToast('Version Activated', `${meta.title} switched to ${r.tag}`, 'success');
-              } else {
-                showToast('Switch Failed', data.error || 'Could not change active version.', 'error');
+
+                const data = await res.json();
+                if (data.ok) {
+                  activeTag = r.tag;
+                  tagTextEl.textContent = activeTag;
+                  if (r.downloaded_at && dateEl) {
+                    if (currentTheme === 'artcraft') {
+                      dateEl.textContent = `UPDATED ${formatDate(r.downloaded_at).toUpperCase()}`;
+                    } else {
+                      dateEl.textContent = `Updated ${formatDate(r.downloaded_at)}`;
+                    }
+                  }
+                  renderVersionMenu();
+                  showToast('Version Activated', `${meta.title} switched to ${r.tag}`, 'success');
+                } else {
+                  showToast('Switch Failed', data.error || 'Could not change active version.', 'error');
+                }
+              } catch (err) {
+                showToast('Network Error', err.message, 'error');
+              } finally {
+                chipBtn.disabled = false;
               }
-            } catch (err) {
-              showToast('Network Error', err.message, 'error');
-            } finally {
-              chipBtn.disabled = false;
+            };
+
+            if (isAuthRequired && !getAdminPassword()) {
+              openAuthModal(performSwitch);
+            } else {
+              performSwitch();
             }
           });
 
@@ -908,11 +1020,12 @@
           }
         }
 
-        // Merge server pinned apps if local storage is empty
-        if (data.pinned && Array.isArray(data.pinned) && data.pinned.length > 0 && pinnedApps.size === 0) {
-          data.pinned.forEach(p => pinnedApps.add(p));
-          localStorage.setItem('artcraft_pinned_apps', JSON.stringify([...pinnedApps]));
+        if (data.auth_required !== undefined) {
+          isAuthRequired = Boolean(data.auth_required);
+        } else if (res.headers.get('X-Auth-Required') !== null) {
+          isAuthRequired = res.headers.get('X-Auth-Required') === 'true';
         }
+        updateLockBtnVisibility();
 
         rawApps = data.apps || [];
         updateCategoryCounts();
@@ -988,12 +1101,30 @@
     async function triggerSync() {
       if (isSyncing) return;
 
+      if (isAuthRequired && !getAdminPassword()) {
+        openAuthModal(() => triggerSync());
+        return;
+      }
+
       try {
         btnSyncAll.disabled = true;
         btnSyncAll.classList.add('spinning');
         btnSyncLabel.textContent = 'Starting...';
 
-        const res = await fetch('/api/sync', { method: 'POST' });
+        const res = await fetch('/api/sync', {
+          method: 'POST',
+          headers: getApiHeaders()
+        });
+
+        if (res.status === 401) {
+          setAdminPassword('');
+          btnSyncAll.disabled = false;
+          btnSyncAll.classList.remove('spinning');
+          btnSyncLabel.textContent = 'Sync Releases';
+          openAuthModal(() => triggerSync());
+          return;
+        }
+
         const data = await res.json();
 
         if (res.ok && data.ok) {
@@ -1087,7 +1218,9 @@
     window.addEventListener('keydown', (e) => {
       const activeTag = document.activeElement ? document.activeElement.tagName : '';
       const isInputFocused = activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT' || Boolean(document.activeElement?.isContentEditable);
-      const isModalOpen = (appModal && appModal.style.display !== 'none') || (deleteModal && deleteModal.style.display !== 'none');
+      const isModalOpen = (appModal && appModal.style.display !== 'none') || 
+                          (deleteModal && deleteModal.style.display !== 'none') ||
+                          (authModal && authModal.style.display !== 'none');
 
       if (e.key === '/' && !e.ctrlKey && !e.altKey && !e.metaKey && !isInputFocused && !isModalOpen) {
         e.preventDefault();
@@ -1392,9 +1525,15 @@
         const method = isEdit ? 'PUT' : 'POST';
         const res = await fetch(url, {
           method: method,
-          headers: { 'Content-Type': 'application/json' },
+          headers: getApiHeaders(),
           body: JSON.stringify(payload)
         });
+
+        if (res.status === 401) {
+          setAdminPassword('');
+          openAuthModal(() => saveAppFromModal());
+          return;
+        }
 
         const data = await res.json();
         if (data.ok) {
@@ -1440,8 +1579,16 @@
 
       try {
         const res = await fetch(`/api/catalog/${encodeURIComponent(appKey)}`, {
-          method: 'DELETE'
+          method: 'DELETE',
+          headers: getApiHeaders()
         });
+
+        if (res.status === 401) {
+          setAdminPassword('');
+          openAuthModal(() => confirmDeleteApp());
+          return;
+        }
+
         const data = await res.json();
         if (data.ok) {
           showToast('Application Deleted', `${meta.title} was removed and all data was purged.`, 'info');
@@ -1462,9 +1609,15 @@
       try {
         const res = await fetch(`/api/catalog/${encodeURIComponent(appName)}/visibility`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getApiHeaders(),
           body: JSON.stringify({ visible: newVisible })
         });
+
+        if (res.status === 401) {
+          setAdminPassword('');
+          openAuthModal(() => toggleAppVisibility(appName, newVisible));
+          return;
+        }
         const data = await res.json();
         if (data.ok) {
           if (APP_CATALOG[appName]) {
@@ -1486,10 +1639,31 @@
 
     // Modal & Edit Mode Event Listeners
     if (btnEditMode) {
-      btnEditMode.addEventListener('click', () => toggleEditMode());
+      btnEditMode.addEventListener('click', () => {
+        if (!isEditMode && isAuthRequired && !getAdminPassword()) {
+          openAuthModal(() => toggleEditMode(true));
+        } else {
+          toggleEditMode();
+        }
+      });
     }
     if (btnDoneEditing) {
       btnDoneEditing.addEventListener('click', () => toggleEditMode(false));
+    }
+    if (btnLockSession) {
+      btnLockSession.addEventListener('click', lockAdminSession);
+    }
+    if (btnAuthClose) {
+      btnAuthClose.addEventListener('click', closeAuthModal);
+    }
+    if (btnAuthCancel) {
+      btnAuthCancel.addEventListener('click', closeAuthModal);
+    }
+    if (authForm) {
+      authForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        verifyAndSubmitAuth();
+      });
     }
     if (btnOpenAddModal) {
       btnOpenAddModal.addEventListener('click', openAddAppModal);
@@ -1556,10 +1730,16 @@
         if (e.target === deleteModal) closeDeleteModal();
       });
     }
+    if (authModal) {
+      authModal.addEventListener('click', (e) => {
+        if (e.target === authModal) closeAuthModal();
+      });
+    }
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         closeAppModal();
         closeDeleteModal();
+        closeAuthModal();
       }
     });
 

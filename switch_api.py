@@ -4,26 +4,27 @@ switch_api.py – Version-switch, Catalog Management, and System Control HTTP AP
 
 Endpoints:
   GET    /api/manifest                   → combined manifest of all apps + system status + catalog
-  GET    /api/status                     → system sync status and stats
+  GET    /api/status                     → system sync status, stats, and auth requirement
   GET    /api/catalog                    → applications catalog metadata
+  POST   /api/verify-auth                → verify admin password (returns 200 or 401)
   POST   /api/catalog                    → add new application to catalog.json (optional sync_now)
   PUT    /api/catalog/{app}              → update existing application in catalog.json
   PATCH  /api/catalog/{app}/visibility   → toggle visibility (visible: true/false)
   DELETE /api/catalog/{app}              → delete app from catalog and purge /data/{app}
-  GET    /api/pinned                     → list of pinned app identifiers
-  POST   /api/pinned                     → save list of pinned app identifiers
   POST   /api/sync                       → trigger background sync of releases
   GET    /api/{app}/versions             → versions.json for a single app
   POST   /api/{app}/switch/{tag}         → atomically switch active release
   OPTIONS /api/*                         → CORS preflight
 """
 
+import hmac
 import json
 import os
 import re
 import shutil
 import sys
 import tempfile
+import time
 import subprocess
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -33,7 +34,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 TARGET_DIR: str = os.environ.get("TARGET_DIR", "/data")
 SYNC_LOCK_FILE: Path = Path(os.environ.get("SYNC_LOCK_PATH", "/tmp/sync.lock"))
 STATUS_FILE: Path = Path(TARGET_DIR) / ".sync_status.json"
-PINNED_FILE: Path = Path(TARGET_DIR) / "pinned.json"
 CATALOG_FILE: Path = Path(os.environ.get("CATALOG_FILE", "/config/catalog.json"))
 BUNDLED_CATALOG_FILE: Path = Path("/usr/local/share/artcraft/catalog.json")
 LOCAL_CATALOG_FILE: Path = Path(__file__).resolve().parent / "config" / "catalog.json"
@@ -150,7 +150,39 @@ def get_status() -> Dict[str, Any]:
         "apps_count": len(apps_list),
         "schedule": os.environ.get("SYNC_CRON", "0 0 * * *"),
         "timezone": os.environ.get("TZ", "UTC"),
+        "auth_required": is_auth_required(),
     }
+
+
+def get_admin_password() -> str:
+    """Return configured admin password, or empty string if disabled."""
+    return os.environ.get("ADMIN_PASSWORD", "").strip()
+
+
+def is_auth_required() -> bool:
+    """Return True if admin password protection is enabled."""
+    return bool(get_admin_password())
+
+
+def verify_admin_request(headers: Any) -> bool:
+    """Verify request headers against ADMIN_PASSWORD using constant-time comparison."""
+    expected = get_admin_password()
+    if not expected:
+        return True
+
+    provided = ""
+    if hasattr(headers, "get"):
+        provided = headers.get("X-Admin-Password", "") or ""
+        if not provided:
+            auth_hdr = headers.get("Authorization", "") or ""
+            if auth_hdr.startswith("Bearer "):
+                provided = auth_hdr[7:].strip()
+
+    if provided and hmac.compare_digest(provided.encode("utf-8"), expected.encode("utf-8")):
+        return True
+
+    time.sleep(1)  # Throttle brute-force attempts
+    return False
 
 
 def trigger_sync() -> Tuple[Dict[str, Any], int]:
@@ -177,30 +209,6 @@ def trigger_sync() -> Tuple[Dict[str, Any], int]:
         return {"ok": True, "message": "Sync started in background", "pid": proc.pid}, 200
     except Exception as exc:
         return {"ok": False, "error": f"Failed to execute sync script: {exc}"}, 500
-
-
-def get_pinned() -> List[str]:
-    """Return list of pinned app identifiers."""
-    data = read_json(PINNED_FILE)
-    if isinstance(data, list):
-        return [str(x) for x in data if isinstance(x, (str, int))]
-    if isinstance(data, dict):
-        pinned = data.get("pinned", [])
-        if isinstance(pinned, list):
-            return [str(x) for x in pinned if isinstance(x, (str, int))]
-    return []
-
-
-def set_pinned(pinned_list: Any) -> Dict[str, Any]:
-    """Atomically write pinned apps list."""
-    if not isinstance(pinned_list, list):
-        pinned_list = []
-    cleaned: List[str] = [
-        str(x) for x in pinned_list 
-        if isinstance(x, (str, int)) and APP_NAME_RE.fullmatch(str(x))
-    ]
-    write_json(PINNED_FILE, {"pinned": cleaned})
-    return {"ok": True, "pinned": cleaned}
 
 
 def get_catalog() -> Dict[str, Any]:
@@ -316,11 +324,6 @@ def delete_catalog_app(app_key: str) -> Tuple[Dict[str, Any], int]:
         except OSError:
             pass
 
-    # Unpin if pinned
-    pinned = get_pinned()
-    if app_key in pinned:
-        set_pinned([p for p in pinned if p != app_key])
-
     return {"ok": True, "app": app_key, "deleted": True}, 200
 
 
@@ -358,7 +361,12 @@ def get_manifest() -> Dict[str, Any]:
                 "releases": [],
             })
 
-    return {"apps": apps, "system": get_status(), "pinned": get_pinned(), "catalog": catalog}
+    return {
+        "apps": apps,
+        "system": get_status(),
+        "catalog": catalog,
+        "auth_required": is_auth_required(),
+    }
 
 
 def get_versions(app: str) -> Optional[Dict[str, Any]]:
@@ -431,7 +439,8 @@ def switch_version(app: str, tag: str) -> Tuple[Dict[str, Any], int]:
 CORS_HEADERS: Dict[str, str] = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Admin-Password",
+    "Access-Control-Expose-Headers": "X-Auth-Required",
 }
 
 
@@ -468,13 +477,6 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
             log("GET", self.path, 200)
             return
 
-        # GET /api/pinned
-        if path == "/api/pinned":
-            body = {"pinned": get_pinned()}
-            self._send(200, body)
-            log("GET", self.path, 200)
-            return
-
         # GET /api/catalog
         if path == "/api/catalog":
             body = get_catalog()
@@ -501,26 +503,27 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         path = self.path.split("?")[0].rstrip("/")
 
+        # POST /api/verify-auth
+        if path == "/api/verify-auth":
+            if verify_admin_request(self.headers):
+                self._send(200, {"ok": True, "auth_required": is_auth_required()})
+                log("POST", self.path, 200)
+            else:
+                self._send(401, {"ok": False, "error": "Unauthorized: Invalid admin password"})
+                log("POST", self.path, 401)
+            return
+
+        # Enforce admin authentication on all mutating POST routes
+        if not verify_admin_request(self.headers):
+            self._send(401, {"ok": False, "error": "Unauthorized: Invalid or missing admin password"})
+            log("POST", self.path, 401)
+            return
+
         # POST /api/sync
         if path == "/api/sync":
             body, status = trigger_sync()
             self._send(status, body)
             log("POST", self.path, status)
-            return
-
-        # POST /api/pinned
-        if path == "/api/pinned":
-            content_length = int(self.headers.get("Content-Length", 0))
-            payload = self.rfile.read(content_length) if content_length > 0 else b"{}"
-            try:
-                data = json.loads(payload.decode("utf-8"))
-                pinned = data.get("pinned", []) if isinstance(data, dict) else data
-                body = set_pinned(pinned)
-                self._send(200, body)
-                log("POST", self.path, 200)
-            except Exception as e:
-                self._send(400, {"ok": False, "error": str(e)})
-                log("POST", self.path, 400)
             return
 
         # POST /api/catalog
@@ -565,6 +568,11 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
     def do_PUT(self) -> None:
         path = self.path.split("?")[0].rstrip("/")
 
+        if not verify_admin_request(self.headers):
+            self._send(401, {"ok": False, "error": "Unauthorized: Invalid or missing admin password"})
+            log("PUT", self.path, 401)
+            return
+
         # PUT /api/catalog/{app}
         m = re.fullmatch(r"/api/catalog/([A-Za-z0-9_\-]+)", path)
         if m:
@@ -596,6 +604,11 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
     def do_PATCH(self) -> None:
         path = self.path.split("?")[0].rstrip("/")
 
+        if not verify_admin_request(self.headers):
+            self._send(401, {"ok": False, "error": "Unauthorized: Invalid or missing admin password"})
+            log("PATCH", self.path, 401)
+            return
+
         # PATCH /api/catalog/{app}/visibility
         m = re.fullmatch(r"/api/catalog/([A-Za-z0-9_\-]+)/visibility", path)
         if m:
@@ -621,6 +634,11 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
     def do_DELETE(self) -> None:
         path = self.path.split("?")[0].rstrip("/")
 
+        if not verify_admin_request(self.headers):
+            self._send(401, {"ok": False, "error": "Unauthorized: Invalid or missing admin password"})
+            log("DELETE", self.path, 401)
+            return
+
         # DELETE /api/catalog/{app}
         m = re.fullmatch(r"/api/catalog/([A-Za-z0-9_\-]+)", path)
         if m:
@@ -642,6 +660,7 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(payload)))
+        self.send_header("X-Auth-Required", "true" if is_auth_required() else "false")
         for k, v in CORS_HEADERS.items():
             self.send_header(k, v)
         self.end_headers()

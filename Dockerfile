@@ -56,7 +56,8 @@ ENV SYNC_CRON="0 0 * * *" \
     CATALOG_FILE="/config/catalog.json" \
     TARGET_DIR="/data" \
     MAX_RELEASES="3" \
-    TZ=UTC
+    TZ=UTC \
+    ADMIN_PASSWORD=""
 
 EXPOSE 80
 

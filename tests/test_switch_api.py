@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 test_switch_api.py — Comprehensive unit tests for ArtCraft Switch API.
-Covers version switching, semver sorting, pinned apps, path traversal security, and manifest aggregation.
+Covers version switching, semver sorting, admin password protection, path traversal security, and manifest aggregation.
 """
 
 import io
@@ -76,13 +76,11 @@ class TestSwitchVersionWorkflow(unittest.TestCase):
     def setUp(self):
         self.test_dir = tempfile.mkdtemp(prefix="artcraft_test_")
         self.orig_target_dir = switch_api.TARGET_DIR
-        self.orig_pinned_file = switch_api.PINNED_FILE
         self.orig_status_file = switch_api.STATUS_FILE
         self.orig_catalog_file = switch_api.CATALOG_FILE
         self.orig_local_catalog = switch_api.LOCAL_CATALOG_FILE
 
         switch_api.TARGET_DIR = self.test_dir
-        switch_api.PINNED_FILE = Path(self.test_dir) / "pinned.json"
         switch_api.STATUS_FILE = Path(self.test_dir) / ".sync_status.json"
         self.catalog_file = Path(self.test_dir) / "catalog.json"
         switch_api.write_json(self.catalog_file, {})
@@ -112,7 +110,6 @@ class TestSwitchVersionWorkflow(unittest.TestCase):
 
     def tearDown(self):
         switch_api.TARGET_DIR = self.orig_target_dir
-        switch_api.PINNED_FILE = self.orig_pinned_file
         switch_api.STATUS_FILE = self.orig_status_file
         switch_api.CATALOG_FILE = self.orig_catalog_file
         switch_api.LOCAL_CATALOG_FILE = self.orig_local_catalog
@@ -204,12 +201,10 @@ class TestCatalogManagement(unittest.TestCase):
     def setUp(self):
         self.test_dir = tempfile.mkdtemp(prefix="artcraft_cat_test_")
         self.orig_target_dir = switch_api.TARGET_DIR
-        self.orig_pinned_file = switch_api.PINNED_FILE
         self.orig_catalog_file = switch_api.CATALOG_FILE
         self.orig_local_catalog = switch_api.LOCAL_CATALOG_FILE
 
         switch_api.TARGET_DIR = self.test_dir
-        switch_api.PINNED_FILE = Path(self.test_dir) / "pinned.json"
         self.catalog_file = Path(self.test_dir) / "catalog.json"
         switch_api.CATALOG_FILE = self.catalog_file
         switch_api.LOCAL_CATALOG_FILE = self.catalog_file
@@ -234,7 +229,6 @@ class TestCatalogManagement(unittest.TestCase):
 
     def tearDown(self):
         switch_api.TARGET_DIR = self.orig_target_dir
-        switch_api.PINNED_FILE = self.orig_pinned_file
         switch_api.CATALOG_FILE = self.orig_catalog_file
         switch_api.LOCAL_CATALOG_FILE = self.orig_local_catalog
         shutil.rmtree(self.test_dir, ignore_errors=True)
@@ -299,9 +293,6 @@ class TestCatalogManagement(unittest.TestCase):
         icon_file = icons_dir / "photocraft.svg"
         icon_file.write_text("<svg></svg>")
 
-        # Pin app
-        switch_api.set_pinned(["photocraft", "otherapp"])
-
         # Call delete
         res, code = switch_api.delete_catalog_app("photocraft")
         self.assertEqual(code, 200)
@@ -315,10 +306,51 @@ class TestCatalogManagement(unittest.TestCase):
         self.assertFalse(app_dir.exists())
         self.assertFalse(icon_file.exists())
 
-        # Verify unpinned
-        pinned = switch_api.get_pinned()
-        self.assertNotIn("photocraft", pinned)
-        self.assertIn("otherapp", pinned)
+
+class TestAdminPasswordProtection(unittest.TestCase):
+    """Test optional ADMIN_PASSWORD authentication, verification, and timing attack protection."""
+
+    def setUp(self):
+        self.orig_env_pw = os.environ.get("ADMIN_PASSWORD")
+        if "ADMIN_PASSWORD" in os.environ:
+            del os.environ["ADMIN_PASSWORD"]
+
+    def tearDown(self):
+        if self.orig_env_pw is not None:
+            os.environ["ADMIN_PASSWORD"] = self.orig_env_pw
+        elif "ADMIN_PASSWORD" in os.environ:
+            del os.environ["ADMIN_PASSWORD"]
+
+    def test_auth_disabled_by_default(self):
+        os.environ["ADMIN_PASSWORD"] = ""
+        self.assertFalse(switch_api.is_auth_required())
+        self.assertTrue(switch_api.verify_admin_request({}))
+        self.assertTrue(switch_api.verify_admin_request({"X-Admin-Password": ""}))
+        self.assertTrue(switch_api.verify_admin_request({"X-Admin-Password": "anything"}))
+
+    def test_auth_enabled_verification(self):
+        os.environ["ADMIN_PASSWORD"] = "secret123"
+        self.assertTrue(switch_api.is_auth_required())
+
+        # Correct password via X-Admin-Password
+        self.assertTrue(switch_api.verify_admin_request({"X-Admin-Password": "secret123"}))
+
+        # Correct password via Authorization: Bearer
+        self.assertTrue(switch_api.verify_admin_request({"Authorization": "Bearer secret123"}))
+
+        # Missing or wrong password (mock sleep to avoid slowing down tests)
+        orig_sleep = switch_api.time.sleep
+        slept = []
+        switch_api.time.sleep = lambda s: slept.append(s)
+        try:
+            self.assertFalse(switch_api.verify_admin_request({}))
+            self.assertEqual(len(slept), 1)
+            self.assertEqual(slept[0], 1)
+
+            self.assertFalse(switch_api.verify_admin_request({"X-Admin-Password": "wrong"}))
+            self.assertEqual(len(slept), 2)
+        finally:
+            switch_api.time.sleep = orig_sleep
 
 
 if __name__ == "__main__":
