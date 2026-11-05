@@ -182,36 +182,47 @@
     }
 
     /* Admin Authentication State & Helpers */
-    const ADMIN_PW_KEY = 'artcraft_admin_pw';
+    let isAuthenticated = false;
     let isAuthRequired = false;
     let pendingAuthAction = null;
 
-    function getAdminPassword() {
-      return sessionStorage.getItem(ADMIN_PW_KEY) || '';
+    // Purge any legacy raw credentials from previous versions
+    try { sessionStorage.removeItem('artcraft_admin_pw'); } catch (e) {}
+
+    function isSessionAuthenticated() {
+      return !isAuthRequired || isAuthenticated;
     }
 
-    function setAdminPassword(pw) {
-      if (pw) {
-        sessionStorage.setItem(ADMIN_PW_KEY, pw);
-      } else {
-        sessionStorage.removeItem(ADMIN_PW_KEY);
-      }
+    function setAuthenticated(val) {
+      isAuthenticated = Boolean(val);
       updateLockBtnVisibility();
     }
 
     function updateLockBtnVisibility() {
       if (btnLockSession) {
-        btnLockSession.style.display = (isAuthRequired && getAdminPassword()) ? 'inline-flex' : 'none';
+        btnLockSession.style.display = (isAuthRequired && isAuthenticated) ? 'inline-flex' : 'none';
       }
     }
 
     function getApiHeaders(extraHeaders = {}) {
-      const headers = { 'Content-Type': 'application/json', ...extraHeaders };
-      const pw = getAdminPassword();
-      if (pw) {
-        headers['X-Admin-Password'] = pw;
+      return { 'Content-Type': 'application/json', ...extraHeaders };
+    }
+
+    async function checkExistingAuthSession() {
+      if (!isAuthRequired) {
+        setAuthenticated(true);
+        return;
       }
-      return headers;
+      try {
+        const res = await fetch('/api/verify-auth', { method: 'POST' });
+        if (res.ok) {
+          setAuthenticated(true);
+        } else {
+          setAuthenticated(false);
+        }
+      } catch (e) {
+        setAuthenticated(false);
+      }
     }
 
     function openAuthModal(onSuccess) {
@@ -251,16 +262,24 @@
       try {
         const res = await fetch('/api/verify-auth', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Admin-Password': pw }
+          headers: { 'Content-Type': 'application/json', 'X-Admin-Password': pw },
+          body: JSON.stringify({ password: pw })
         });
+        const data = await res.json().catch(() => ({}));
         if (res.ok) {
-          setAdminPassword(pw);
+          setAuthenticated(true);
           closeAuthModal();
           showToast('Authenticated', 'Admin session unlocked', 'success');
           if (pendingAuthAction) {
             const action = pendingAuthAction;
             pendingAuthAction = null;
             action();
+          }
+        } else if (res.status === 429) {
+          if (authErrorMsg) {
+            const retrySec = data.retry_after || 60;
+            authErrorMsg.textContent = `Too many failed attempts. Please wait ${retrySec} seconds.`;
+            authErrorMsg.style.display = 'block';
           }
         } else {
           if (authErrorMsg) {
@@ -280,8 +299,13 @@
       }
     }
 
-    function lockAdminSession() {
-      setAdminPassword('');
+    async function lockAdminSession() {
+      try {
+        await fetch('/api/logout', { method: 'POST' });
+      } catch (e) {
+        // ignore
+      }
+      setAuthenticated(false);
       if (isEditMode) {
         toggleEditMode(false);
       }
@@ -716,7 +740,7 @@
                 });
 
                 if (res.status === 401) {
-                  setAdminPassword('');
+                  setAuthenticated(false);
                   openAuthModal(performSwitch);
                   return;
                 }
@@ -744,7 +768,7 @@
               }
             };
 
-            if (isAuthRequired && !getAdminPassword()) {
+            if (isAuthRequired && !isAuthenticated) {
               openAuthModal(performSwitch);
             } else {
               performSwitch();
@@ -1089,6 +1113,7 @@
           isAuthRequired = res.headers.get('X-Auth-Required') === 'true';
         }
         updateLockBtnVisibility();
+        checkExistingAuthSession();
 
         rawApps = data.apps || [];
         updateCategoryCounts();
@@ -1164,7 +1189,7 @@
     async function triggerSync() {
       if (isSyncing) return;
 
-      if (isAuthRequired && !getAdminPassword()) {
+      if (isAuthRequired && !isAuthenticated) {
         openAuthModal(() => triggerSync());
         return;
       }
@@ -1180,7 +1205,7 @@
         });
 
         if (res.status === 401) {
-          setAdminPassword('');
+          setAuthenticated(false);
           btnSyncAll.disabled = false;
           btnSyncAll.classList.remove('spinning');
           btnSyncLabel.textContent = 'Sync Releases';
@@ -1593,7 +1618,7 @@
         });
 
         if (res.status === 401) {
-          setAdminPassword('');
+          setAuthenticated(false);
           openAuthModal(() => saveAppFromModal());
           return;
         }
@@ -1647,7 +1672,7 @@
         });
 
         if (res.status === 401) {
-          setAdminPassword('');
+          setAuthenticated(false);
           openAuthModal(() => confirmDeleteApp());
           return;
         }
@@ -1677,7 +1702,7 @@
         });
 
         if (res.status === 401) {
-          setAdminPassword('');
+          setAuthenticated(false);
           openAuthModal(() => toggleAppVisibility(appName, newVisible));
           return;
         }
@@ -1703,7 +1728,7 @@
     // Modal & Edit Mode Event Listeners
     if (btnEditMode) {
       btnEditMode.addEventListener('click', () => {
-        if (!isEditMode && isAuthRequired && !getAdminPassword()) {
+        if (!isEditMode && isAuthRequired && !isAuthenticated) {
           openAuthModal(() => toggleEditMode(true));
         } else {
           toggleEditMode();

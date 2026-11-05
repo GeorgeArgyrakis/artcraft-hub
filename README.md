@@ -150,9 +150,12 @@ Caddy obtains a certificate automatically and forwards upstream headers unchange
 > Dashboard viewing, app launching, searching, and per-browser local favorites always remain public.
 
 When `ADMIN_PASSWORD` is configured:
-- Entering **Edit Mode** or switching releases on the dashboard prompts for the admin password, stored in browser `sessionStorage` until locked or closed.
-- State-changing API endpoints require either the `X-Admin-Password: <password>` or `Authorization: Bearer <password>` header.
-- Failed verification uses timing attack mitigation (`hmac.compare_digest`) and throttles brute-force attempts with a 1-second delay.
+- Entering **Edit Mode** or switching releases on the dashboard prompts for the admin password, which is verified against `POST /api/verify-auth`. Upon successful authentication, the API issues a secure `HttpOnly; SameSite=Strict; Path=/api` session cookie (`artcraft_session`). Plaintext passwords are never stored in browser `sessionStorage` or `localStorage`, ensuring same-origin WebAssembly applications cannot inspect credentials.
+- State-changing API endpoints accept the `artcraft_session` cookie, an `X-Admin-Password: <password>` header, or an `Authorization: Bearer <session_or_password>` header.
+- Verification uses cryptographic pre-hashing with SHA-256 and constant-time comparison (`hmac.compare_digest`) to prevent timing and length-leak side-channels.
+- Failed authentication triggers non-blocking IP-based rate limiting (5 failed attempts per 60 seconds), returning `429 Too Many Requests` with a `Retry-After` header to prevent thread exhaustion DoS.
+- Mutating request bodies enforce a strict 64 KB `MAX_BODY_SIZE` limit to protect against pre- or post-auth memory exhaustion.
+- Locking the session via the dashboard calls `POST /api/logout` to revoke the server-side session token and clear the browser cookie.
 
 Endpoints guarded when `ADMIN_PASSWORD` is set:
 
@@ -164,11 +167,12 @@ Endpoints guarded when `ADMIN_PASSWORD` is set:
 | `DELETE` | `/api/catalog/{app}` | Remove an app **and purge its data from disk** |
 | `POST` | `/api/sync` | Trigger a release sync |
 | `POST` | `/api/{app}/switch/{tag}` | Switch the active release |
-| `POST` | `/api/verify-auth` | Test credentials against the server (`200 OK` or `401 Unauthorized`) |
+| `POST` | `/api/verify-auth` | Test credentials & issue `artcraft_session` cookie (`200 OK`, `401 Unauthorized`, or `429 Too Many Requests`) |
+| `POST` | `/api/logout` | Revoke active admin session and clear cookie |
 
 Recommendations:
 
-- **Always serve behind HTTPS** when exposing the hub outside `localhost` so credentials and `SharedArrayBuffer` remain secure.
+- **Always serve behind HTTPS** when exposing the hub outside `localhost` so credentials, cookies, and `SharedArrayBuffer` remain secure.
 - If you leave `ADMIN_PASSWORD` empty on a public or shared network, anyone can add or delete apps.
 - The Python API on port `5000` is meant to be reached only through Caddy. Do not publish port `5000` on the host.
 - Use a `GITHUB_TOKEN` with **no scopes** (public repos only need read access to release metadata).

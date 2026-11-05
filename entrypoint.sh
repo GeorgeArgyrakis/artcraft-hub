@@ -6,6 +6,13 @@ CRON_SCHEDULE="${SYNC_CRON:-0 0 * * *}"
 
 echo "=== ArtCraft Hub starting ==="
 
+# Check admin authentication status
+if [ -n "${ADMIN_PASSWORD:-}" ]; then
+  echo "[AUTH] Admin password protection: ENABLED (HttpOnly session cookies & rate-limiting active)"
+else
+  echo "[AUTH] WARNING: ADMIN_PASSWORD is not set. Hub management features and API are in OPEN ACCESS mode."
+fi
+
 # Ensure directories and default catalog.json
 mkdir -p /config /data /data/assets /data/icons /data/previews
 if [ ! -f "/config/catalog.json" ] && [ -f "/usr/local/share/artcraft/catalog.json" ]; then

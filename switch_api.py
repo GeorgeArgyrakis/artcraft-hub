@@ -17,16 +17,20 @@ Endpoints:
   OPTIONS /api/*                         → CORS preflight
 """
 
+import hashlib
 import hmac
 import json
 import os
 import re
+import secrets
 import shutil
 import sys
 import tempfile
+import threading
 import time
 import subprocess
 from datetime import datetime, timezone
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -154,6 +158,11 @@ def get_status() -> Dict[str, Any]:
     }
 
 
+SESSION_COOKIE_NAME: str = "artcraft_session"
+SESSION_DURATION_SECONDS: int = 86400  # 24 hours
+MAX_BODY_SIZE: int = 64 * 1024         # 64 KB payload cap to prevent OOM/DoS
+
+
 def get_admin_password() -> str:
     """Return configured admin password, or empty string if disabled."""
     return os.environ.get("ADMIN_PASSWORD", "").strip()
@@ -164,10 +173,240 @@ def is_auth_required() -> bool:
     return bool(get_admin_password())
 
 
-def verify_admin_request(headers: Any) -> bool:
-    """Verify request headers against ADMIN_PASSWORD using constant-time comparison."""
+def verify_password(expected: str, provided: str) -> bool:
+    """Constant-time comparison with SHA-256 pre-hashing to prevent timing attacks and length leaks."""
+    if not expected or not provided:
+        return False
+    exp_hash = hashlib.sha256(expected.encode("utf-8")).digest()
+    prov_hash = hashlib.sha256(provided.encode("utf-8")).digest()
+    return hmac.compare_digest(exp_hash, prov_hash)
+
+
+class SessionManager:
+    """Thread-safe in-memory session token manager."""
+
+    def __init__(self, ttl: int = SESSION_DURATION_SECONDS):
+        self.ttl = ttl
+        self._sessions: Dict[str, float] = {}
+        self._lock = threading.Lock()
+
+    def create_session(self) -> str:
+        token = secrets.token_urlsafe(32)
+        expires_at = time.time() + self.ttl
+        with self._lock:
+            self._purge_expired_locked()
+            self._sessions[token] = expires_at
+        return token
+
+    def is_valid(self, token: str) -> bool:
+        if not token:
+            return False
+        with self._lock:
+            expires_at = self._sessions.get(token)
+            if not expires_at:
+                return False
+            if time.time() > expires_at:
+                del self._sessions[token]
+                return False
+            return True
+
+    def revoke_session(self, token: str) -> bool:
+        with self._lock:
+            return self._sessions.pop(token, None) is not None
+
+    def _purge_expired_locked(self) -> None:
+        now = time.time()
+        expired = [t for t, exp in self._sessions.items() if now > exp]
+        for t in expired:
+            del self._sessions[t]
+
+    def clear(self) -> None:
+        with self._lock:
+            self._sessions.clear()
+
+
+session_manager = SessionManager()
+
+
+class AuthRateLimiter:
+    """Non-blocking IP-based failure tracker preventing brute-force password guessing."""
+
+    def __init__(self, max_attempts: int = 5, window_seconds: int = 60, lockout_seconds: int = 60):
+        self.max_attempts = max_attempts
+        self.window_seconds = window_seconds
+        self.lockout_seconds = lockout_seconds
+        self._failures: Dict[str, List[float]] = {}
+        self._locked_until: Dict[str, float] = {}
+        self._lock = threading.Lock()
+
+    def is_locked(self, ip: str) -> Tuple[bool, int]:
+        """Return (True, retry_after) if IP is currently locked out."""
+        now = time.time()
+        with self._lock:
+            locked_until = self._locked_until.get(ip, 0)
+            if now < locked_until:
+                return True, max(1, int(locked_until - now))
+            if ip in self._locked_until:
+                del self._locked_until[ip]
+            return False, 0
+
+    def record_failure(self, ip: str) -> Tuple[bool, int]:
+        """Record a failed authentication attempt. Returns (is_locked_now, retry_after)."""
+        now = time.time()
+        with self._lock:
+            cutoff = now - self.window_seconds
+            attempts = [ts for ts in self._failures.get(ip, []) if ts > cutoff]
+            attempts.append(now)
+            self._failures[ip] = attempts
+
+            if len(attempts) >= self.max_attempts:
+                lockout = now + self.lockout_seconds
+                self._locked_until[ip] = lockout
+                self._failures[ip] = []
+                return True, self.lockout_seconds
+            return False, 0
+
+    def record_success(self, ip: str) -> None:
+        """Clear failures on successful authentication."""
+        with self._lock:
+            self._failures.pop(ip, None)
+            self._locked_until.pop(ip, None)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._failures.clear()
+            self._locked_until.clear()
+
+
+rate_limiter = AuthRateLimiter()
+
+
+def get_client_ip(handler: BaseHTTPRequestHandler) -> str:
+    """Extract client IP, taking X-Forwarded-For into account if behind reverse proxy."""
+    if hasattr(handler, "headers") and handler.headers:
+        xfwd = handler.headers.get("X-Forwarded-For")
+        if xfwd:
+            return xfwd.split(",")[0].strip()
+    client = getattr(handler, "client_address", None)
+    if client and isinstance(client, tuple) and len(client) > 0:
+        return str(client[0])
+    return "127.0.0.1"
+
+
+def get_cookie_value(headers: Any, cookie_name: str) -> Optional[str]:
+    """Extract cookie value from request headers."""
+    if not hasattr(headers, "get"):
+        return None
+    raw_cookie = headers.get("Cookie")
+    if not raw_cookie:
+        return None
+    try:
+        cookie = SimpleCookie()
+        cookie.load(raw_cookie)
+        morsel = cookie.get(cookie_name)
+        return morsel.value if morsel else None
+    except Exception:
+        return None
+
+
+def read_request_body(handler: BaseHTTPRequestHandler) -> Tuple[Optional[bytes], Optional[Tuple[int, Dict[str, Any]]]]:
+    """
+    Safely read and validate HTTP request body.
+    Enforces MAX_BODY_SIZE to prevent memory exhaustion / DoS attacks.
+    Returns (payload, None) on success, or (None, (status_code, error_dict)) on failure.
+    """
+    raw_len = handler.headers.get("Content-Length")
+    if raw_len is None:
+        return b"{}", None
+
+    try:
+        content_length = int(raw_len)
+    except (ValueError, TypeError):
+        return None, (400, {"ok": False, "error": "Invalid Content-Length header: must be an integer"})
+
+    if content_length < 0:
+        return None, (400, {"ok": False, "error": "Invalid Content-Length: cannot be negative"})
+
+    if content_length > MAX_BODY_SIZE:
+        return None, (413, {
+            "ok": False,
+            "error": f"Payload too large: Content-Length {content_length} exceeds limit of {MAX_BODY_SIZE} bytes"
+        })
+
+    if content_length == 0:
+        return b"{}", None
+
+    try:
+        payload = handler.rfile.read(content_length)
+        if len(payload) != content_length:
+            return None, (400, {"ok": False, "error": "Incomplete payload received"})
+        return payload, None
+    except Exception as exc:
+        return None, (400, {"ok": False, "error": f"Failed reading request body: {exc}"})
+
+
+def check_admin_auth(handler: BaseHTTPRequestHandler) -> Tuple[bool, Optional[Tuple[int, Dict[str, Any], Dict[str, str]]]]:
+    """
+    Check if request is authorized as admin.
+    Returns (True, None) if authorized.
+    Returns (False, (status_code, body_dict, extra_headers)) if unauthorized or rate-limited.
+    """
+    if not is_auth_required():
+        return True, None
+
+    client_ip = get_client_ip(handler)
+    is_locked, retry_after = rate_limiter.is_locked(client_ip)
+    if is_locked:
+        return False, (429, {
+            "ok": False,
+            "error": "Too many failed authentication attempts. Please try again later.",
+            "retry_after": retry_after
+        }, {"Retry-After": str(retry_after)})
+
     expected = get_admin_password()
-    if not expected:
+
+    # 1. Check HttpOnly session cookie
+    session_token = get_cookie_value(handler.headers, SESSION_COOKIE_NAME)
+    if session_token and session_manager.is_valid(session_token):
+        return True, None
+
+    # 2. Check X-Admin-Password header
+    provided_pw = handler.headers.get("X-Admin-Password", "") or ""
+    if provided_pw and verify_password(expected, provided_pw):
+        rate_limiter.record_success(client_ip)
+        return True, None
+
+    # 3. Check Authorization: Bearer <token_or_pw>
+    auth_hdr = handler.headers.get("Authorization", "") or ""
+    if auth_hdr.startswith("Bearer "):
+        bearer_val = auth_hdr[7:].strip()
+        if session_manager.is_valid(bearer_val):
+            return True, None
+        if verify_password(expected, bearer_val):
+            rate_limiter.record_success(client_ip)
+            return True, None
+
+    # Record failure if credentials were provided
+    if provided_pw or auth_hdr or session_token:
+        locked, retry_after = rate_limiter.record_failure(client_ip)
+        if locked:
+            return False, (429, {
+                "ok": False,
+                "error": "Too many failed authentication attempts. Please try again later.",
+                "retry_after": retry_after
+            }, {"Retry-After": str(retry_after)})
+
+    return False, (401, {"ok": False, "error": "Unauthorized: Invalid or missing admin credentials"}, {})
+
+
+def verify_admin_request(headers: Any) -> bool:
+    """Verify request headers or cookies against ADMIN_PASSWORD or active session."""
+    if not is_auth_required():
+        return True
+
+    expected = get_admin_password()
+    session_token = get_cookie_value(headers, SESSION_COOKIE_NAME)
+    if session_token and session_manager.is_valid(session_token):
         return True
 
     provided = ""
@@ -178,10 +417,12 @@ def verify_admin_request(headers: Any) -> bool:
             if auth_hdr.startswith("Bearer "):
                 provided = auth_hdr[7:].strip()
 
-    if provided and hmac.compare_digest(provided.encode("utf-8"), expected.encode("utf-8")):
-        return True
+    if provided:
+        if session_manager.is_valid(provided):
+            return True
+        if verify_password(expected, provided):
+            return True
 
-    time.sleep(1)  # Throttle brute-force attempts
     return False
 
 
@@ -488,8 +729,8 @@ def switch_version(app: str, tag: str) -> Tuple[Dict[str, Any], int]:
 CORS_HEADERS: Dict[str, str] = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Admin-Password",
-    "Access-Control-Expose-Headers": "X-Auth-Required",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Admin-Password, Cookie",
+    "Access-Control-Expose-Headers": "X-Auth-Required, Set-Cookie, Retry-After",
 }
 
 
@@ -554,18 +795,105 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
 
         # POST /api/verify-auth
         if path == "/api/verify-auth":
-            if verify_admin_request(self.headers):
-                self._send(200, {"ok": True, "auth_required": is_auth_required()})
+            client_ip = get_client_ip(self)
+            is_locked, retry_after = rate_limiter.is_locked(client_ip)
+            if is_locked:
+                self._send(429, {
+                    "ok": False,
+                    "error": "Too many failed authentication attempts. Please try again later.",
+                    "retry_after": retry_after
+                }, {"Retry-After": str(retry_after)})
+                log("POST", self.path, 429)
+                return
+
+            if not is_auth_required():
+                self._send(200, {"ok": True, "auth_required": False, "authenticated": True})
                 log("POST", self.path, 200)
-            else:
-                self._send(401, {"ok": False, "error": "Unauthorized: Invalid admin password"})
-                log("POST", self.path, 401)
+                return
+
+            # Check if client already possesses an active session cookie or valid Bearer
+            cookie_token = get_cookie_value(self.headers, SESSION_COOKIE_NAME)
+            if cookie_token and session_manager.is_valid(cookie_token):
+                self._send(200, {"ok": True, "auth_required": True, "authenticated": True})
+                log("POST", self.path, 200)
+                return
+
+            # Extract password from header or Bearer
+            provided_pw = self.headers.get("X-Admin-Password", "") or ""
+            if not provided_pw:
+                auth_hdr = self.headers.get("Authorization", "") or ""
+                if auth_hdr.startswith("Bearer "):
+                    candidate = auth_hdr[7:].strip()
+                    if session_manager.is_valid(candidate):
+                        self._send(200, {"ok": True, "auth_required": True, "authenticated": True})
+                        log("POST", self.path, 200)
+                        return
+                    provided_pw = candidate
+
+            if not provided_pw:
+                # Inspect optional JSON body
+                payload, err = read_request_body(self)
+                if not err and payload and payload != b"{}":
+                    try:
+                        body_data = json.loads(payload.decode("utf-8"))
+                        if isinstance(body_data, dict):
+                            provided_pw = (body_data.get("password") or "").strip()
+                    except Exception:
+                        pass
+
+            expected = get_admin_password()
+            if provided_pw and verify_password(expected, provided_pw):
+                rate_limiter.record_success(client_ip)
+                token = session_manager.create_session()
+                cookie_header = (
+                    f"{SESSION_COOKIE_NAME}={token}; "
+                    f"Max-Age={SESSION_DURATION_SECONDS}; "
+                    f"Path=/api; HttpOnly; SameSite=Strict"
+                )
+                self._send(200, {
+                    "ok": True,
+                    "auth_required": True,
+                    "authenticated": True,
+                    "token": token
+                }, {"Set-Cookie": cookie_header})
+                log("POST", self.path, 200)
+                return
+
+            if provided_pw:
+                locked, retry_after = rate_limiter.record_failure(client_ip)
+                if locked:
+                    self._send(429, {
+                        "ok": False,
+                        "error": "Too many failed authentication attempts. Please try again later.",
+                        "retry_after": retry_after
+                    }, {"Retry-After": str(retry_after)})
+                    log("POST", self.path, 429)
+                    return
+
+            self._send(401, {"ok": False, "error": "Unauthorized: Invalid admin password"})
+            log("POST", self.path, 401)
+            return
+
+        # POST /api/logout
+        if path == "/api/logout":
+            token = get_cookie_value(self.headers, SESSION_COOKIE_NAME)
+            if not token:
+                auth_hdr = self.headers.get("Authorization", "") or ""
+                if auth_hdr.startswith("Bearer "):
+                    token = auth_hdr[7:].strip()
+            if token:
+                session_manager.revoke_session(token)
+            cookie_header = f"{SESSION_COOKIE_NAME}=; Max-Age=0; Path=/api; HttpOnly; SameSite=Strict"
+            self._send(200, {"ok": True, "message": "Admin session terminated"}, {"Set-Cookie": cookie_header})
+            log("POST", self.path, 200)
             return
 
         # Enforce admin authentication on all mutating POST routes
-        if not verify_admin_request(self.headers):
-            self._send(401, {"ok": False, "error": "Unauthorized: Invalid or missing admin password"})
-            log("POST", self.path, 401)
+        is_ok, err_spec = check_admin_auth(self)
+        if not is_ok and err_spec:
+            status, body, extra_headers = err_spec
+            self._send(status, body, extra_headers)
+            log("POST", self.path, status)
             return
 
         # POST /api/sync
@@ -577,10 +905,15 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
 
         # POST /api/catalog
         if path == "/api/catalog":
-            content_length = int(self.headers.get("Content-Length", 0))
-            payload = self.rfile.read(content_length) if content_length > 0 else b"{}"
+            payload, err = read_request_body(self)
+            if err:
+                status, body = err
+                self._send(status, body)
+                log("POST", self.path, status)
+                return
+
             try:
-                data = json.loads(payload.decode("utf-8"))
+                data = json.loads(payload.decode("utf-8")) if payload else {}
             except Exception as e:
                 self._send(400, {"ok": False, "error": f"Invalid JSON payload: {e}"})
                 log("POST", self.path, 400)
@@ -617,19 +950,26 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
     def do_PUT(self) -> None:
         path = self.path.split("?")[0].rstrip("/")
 
-        if not verify_admin_request(self.headers):
-            self._send(401, {"ok": False, "error": "Unauthorized: Invalid or missing admin password"})
-            log("PUT", self.path, 401)
+        is_ok, err_spec = check_admin_auth(self)
+        if not is_ok and err_spec:
+            status, body, extra_headers = err_spec
+            self._send(status, body, extra_headers)
+            log("PUT", self.path, status)
             return
 
         # PUT /api/catalog/{app}
         m = re.fullmatch(r"/api/catalog/([A-Za-z0-9_\-]+)", path)
         if m:
             app_key = m.group(1)
-            content_length = int(self.headers.get("Content-Length", 0))
-            payload = self.rfile.read(content_length) if content_length > 0 else b"{}"
+            payload, err = read_request_body(self)
+            if err:
+                status, body = err
+                self._send(status, body)
+                log("PUT", self.path, status)
+                return
+
             try:
-                data = json.loads(payload.decode("utf-8"))
+                data = json.loads(payload.decode("utf-8")) if payload else {}
             except Exception as e:
                 self._send(400, {"ok": False, "error": f"Invalid JSON payload: {e}"})
                 log("PUT", self.path, 400)
@@ -653,19 +993,26 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
     def do_PATCH(self) -> None:
         path = self.path.split("?")[0].rstrip("/")
 
-        if not verify_admin_request(self.headers):
-            self._send(401, {"ok": False, "error": "Unauthorized: Invalid or missing admin password"})
-            log("PATCH", self.path, 401)
+        is_ok, err_spec = check_admin_auth(self)
+        if not is_ok and err_spec:
+            status, body, extra_headers = err_spec
+            self._send(status, body, extra_headers)
+            log("PATCH", self.path, status)
             return
 
         # PATCH /api/catalog/{app}/visibility
         m = re.fullmatch(r"/api/catalog/([A-Za-z0-9_\-]+)/visibility", path)
         if m:
             app_key = m.group(1)
-            content_length = int(self.headers.get("Content-Length", 0))
-            payload = self.rfile.read(content_length) if content_length > 0 else b"{}"
+            payload, err = read_request_body(self)
+            if err:
+                status, body = err
+                self._send(status, body)
+                log("PATCH", self.path, status)
+                return
+
             try:
-                data = json.loads(payload.decode("utf-8"))
+                data = json.loads(payload.decode("utf-8")) if payload else {}
             except Exception as e:
                 self._send(400, {"ok": False, "error": f"Invalid JSON payload: {e}"})
                 log("PATCH", self.path, 400)
@@ -683,9 +1030,11 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
     def do_DELETE(self) -> None:
         path = self.path.split("?")[0].rstrip("/")
 
-        if not verify_admin_request(self.headers):
-            self._send(401, {"ok": False, "error": "Unauthorized: Invalid or missing admin password"})
-            log("DELETE", self.path, 401)
+        is_ok, err_spec = check_admin_auth(self)
+        if not is_ok and err_spec:
+            status, body, extra_headers = err_spec
+            self._send(status, body, extra_headers)
+            log("DELETE", self.path, status)
             return
 
         # DELETE /api/catalog/{app}
@@ -704,7 +1053,7 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
     # Response helper
     # ------------------------------------------------------------------
 
-    def _send(self, status: int, body: Any) -> None:
+    def _send(self, status: int, body: Any, extra_headers: Optional[Dict[str, str]] = None) -> None:
         payload = json.dumps(body).encode("utf-8") if body is not None else b""
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -712,6 +1061,9 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
         self.send_header("X-Auth-Required", "true" if is_auth_required() else "false")
         for k, v in CORS_HEADERS.items():
             self.send_header(k, v)
+        if extra_headers:
+            for k, v in extra_headers.items():
+                self.send_header(k, v)
         self.end_headers()
         if payload:
             self.wfile.write(payload)
@@ -726,6 +1078,10 @@ def main() -> None:
     server = ThreadingHTTPServer((host, port), SwitchAPIHandler)
     server.daemon_threads = True
     print(f"[{utcnow()}] ArtCraft Switch API v2.0 listening on {host}:{port}  (TARGET_DIR={TARGET_DIR})", flush=True)
+    if is_auth_required():
+        print(f"[{utcnow()}] [AUTH] Admin password protection: ENABLED (HttpOnly session cookies & rate-limiting active)", flush=True)
+    else:
+        print(f"[{utcnow()}] [AUTH] WARNING: ADMIN_PASSWORD is not set. API and UI are in OPEN ACCESS mode.", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

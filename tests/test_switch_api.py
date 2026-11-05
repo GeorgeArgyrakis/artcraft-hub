@@ -116,6 +116,14 @@ class TestSwitchVersionWorkflow(unittest.TestCase):
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
     def test_switch_version_success(self):
+        # Verify OS symlink support
+        test_link = Path(self.test_dir) / "test_probe_symlink"
+        try:
+            os.symlink("photocraft", test_link)
+            test_link.unlink()
+        except OSError:
+            self.skipTest("Filesystem/OS does not support symlink creation without elevated privileges")
+
         resp, code = switch_api.switch_version("photocraft", "v0.2.0")
         self.assertEqual(code, 200)
         self.assertTrue(resp.get("ok"))
@@ -331,12 +339,16 @@ class TestAdminPasswordProtection(unittest.TestCase):
         self.orig_env_pw = os.environ.get("ADMIN_PASSWORD")
         if "ADMIN_PASSWORD" in os.environ:
             del os.environ["ADMIN_PASSWORD"]
+        switch_api.session_manager.clear()
+        switch_api.rate_limiter.clear()
 
     def tearDown(self):
         if self.orig_env_pw is not None:
             os.environ["ADMIN_PASSWORD"] = self.orig_env_pw
         elif "ADMIN_PASSWORD" in os.environ:
             del os.environ["ADMIN_PASSWORD"]
+        switch_api.session_manager.clear()
+        switch_api.rate_limiter.clear()
 
     def test_auth_disabled_by_default(self):
         os.environ["ADMIN_PASSWORD"] = ""
@@ -355,19 +367,127 @@ class TestAdminPasswordProtection(unittest.TestCase):
         # Correct password via Authorization: Bearer
         self.assertTrue(switch_api.verify_admin_request({"Authorization": "Bearer secret123"}))
 
-        # Missing or wrong password (mock sleep to avoid slowing down tests)
-        orig_sleep = switch_api.time.sleep
-        slept = []
-        switch_api.time.sleep = lambda s: slept.append(s)
-        try:
-            self.assertFalse(switch_api.verify_admin_request({}))
-            self.assertEqual(len(slept), 1)
-            self.assertEqual(slept[0], 1)
+        # Session token via cookie
+        token = switch_api.session_manager.create_session()
+        self.assertTrue(switch_api.verify_admin_request({"Cookie": f"artcraft_session={token}"}))
 
-            self.assertFalse(switch_api.verify_admin_request({"X-Admin-Password": "wrong"}))
-            self.assertEqual(len(slept), 2)
-        finally:
-            switch_api.time.sleep = orig_sleep
+        # Missing or wrong password
+        self.assertFalse(switch_api.verify_admin_request({}))
+        self.assertFalse(switch_api.verify_admin_request({"X-Admin-Password": "wrong"}))
+        self.assertFalse(switch_api.verify_admin_request({"Cookie": "artcraft_session=invalid_token"}))
+
+
+class TestPasswordVerification(unittest.TestCase):
+    """Test SHA-256 pre-hashed constant-time password verification."""
+
+    def test_ascii_passwords(self):
+        self.assertTrue(switch_api.verify_password("correct_horse", "correct_horse"))
+        self.assertFalse(switch_api.verify_password("correct_horse", "wrong_horse"))
+
+    def test_unicode_and_greek_passwords(self):
+        # Must not raise TypeError on non-ASCII characters
+        greek_pw = "μυστικός_κωδικός_123"
+        self.assertTrue(switch_api.verify_password(greek_pw, greek_pw))
+        self.assertFalse(switch_api.verify_password(greek_pw, "άλλος_κωδικός"))
+
+    def test_empty_or_none(self):
+        self.assertFalse(switch_api.verify_password("", "anything"))
+        self.assertFalse(switch_api.verify_password("anything", ""))
+        self.assertFalse(switch_api.verify_password("", ""))
+
+
+class TestSessionManager(unittest.TestCase):
+    """Test in-memory session token creation, expiration, and revocation."""
+
+    def setUp(self):
+        self.sm = switch_api.SessionManager(ttl=1)
+
+    def test_create_and_validate_session(self):
+        token = self.sm.create_session()
+        self.assertTrue(self.sm.is_valid(token))
+        self.assertFalse(self.sm.is_valid("nonexistent_token"))
+
+    def test_session_expiration(self):
+        token = self.sm.create_session()
+        self.assertTrue(self.sm.is_valid(token))
+        # Advance time by adjusting token expiration
+        self.sm._sessions[token] = 0
+        self.assertFalse(self.sm.is_valid(token))
+
+    def test_revoke_session(self):
+        token = self.sm.create_session()
+        self.assertTrue(self.sm.is_valid(token))
+        self.assertTrue(self.sm.revoke_session(token))
+        self.assertFalse(self.sm.is_valid(token))
+
+
+class TestAuthRateLimiter(unittest.TestCase):
+    """Test non-blocking rate limiting and lockout behavior."""
+
+    def setUp(self):
+        self.limiter = switch_api.AuthRateLimiter(max_attempts=3, window_seconds=60, lockout_seconds=10)
+
+    def test_rate_limiting_workflow(self):
+        ip = "192.168.1.100"
+
+        # Attempts 1 and 2: not locked
+        locked, _ = self.limiter.record_failure(ip)
+        self.assertFalse(locked)
+        locked, _ = self.limiter.record_failure(ip)
+        self.assertFalse(locked)
+
+        # Attempt 3: triggers lockout
+        locked, retry_after = self.limiter.record_failure(ip)
+        self.assertTrue(locked)
+        self.assertGreaterEqual(retry_after, 9)
+
+        # Subsequent check confirms locked
+        is_locked, retry_after = self.limiter.is_locked(ip)
+        self.assertTrue(is_locked)
+        self.assertGreaterEqual(retry_after, 1)
+
+        # Success clears lockout
+        self.limiter.record_success(ip)
+        is_locked, _ = self.limiter.is_locked(ip)
+        self.assertFalse(is_locked)
+
+
+class TestRequestBodyValidation(unittest.TestCase):
+    """Test body size caps and malformed Content-Length handling."""
+
+    class MockHandler:
+        def __init__(self, headers: dict, body: bytes):
+            self.headers = headers
+            self.rfile = io.BytesIO(body)
+
+    def test_valid_body(self):
+        body_bytes = b'{"app":"cad"}'
+        handler = self.MockHandler({"Content-Length": str(len(body_bytes))}, body_bytes)
+        payload, err = switch_api.read_request_body(handler)
+        self.assertIsNone(err)
+        self.assertEqual(payload, body_bytes)
+
+    def test_body_too_large(self):
+        huge_len = str(switch_api.MAX_BODY_SIZE + 1)
+        handler = self.MockHandler({"Content-Length": huge_len}, b'')
+        payload, err = switch_api.read_request_body(handler)
+        self.assertIsNone(payload)
+        self.assertIsNotNone(err)
+        status, body = err
+        self.assertEqual(status, 413)
+        self.assertIn("Payload too large", body["error"])
+
+    def test_invalid_content_length(self):
+        handler = self.MockHandler({"Content-Length": "not-a-number"}, b'')
+        payload, err = switch_api.read_request_body(handler)
+        self.assertIsNone(payload)
+        self.assertEqual(err[0], 400)
+
+    def test_negative_content_length(self):
+        handler = self.MockHandler({"Content-Length": "-5"}, b'')
+        payload, err = switch_api.read_request_body(handler)
+        self.assertIsNone(payload)
+        self.assertEqual(err[0], 400)
 
 
 if __name__ == "__main__":
