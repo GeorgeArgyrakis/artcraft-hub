@@ -150,7 +150,9 @@ Caddy obtains a certificate automatically and forwards upstream headers unchange
 > Dashboard viewing, app launching, searching, and per-browser local favorites always remain public.
 
 When `ADMIN_PASSWORD` is configured:
-- Entering **Edit Mode** or switching releases on the dashboard prompts for the admin password, which is verified against `POST /api/verify-auth`. Upon successful authentication, the API issues a secure `HttpOnly; SameSite=Strict; Path=/api` session cookie (`artcraft_session`). Plaintext passwords are never stored in browser `sessionStorage` or `localStorage`, ensuring same-origin WebAssembly applications cannot inspect credentials.
+- **Edit Suite** and **Sync Releases** buttons are hidden by default on the dashboard and replaced by an **Unlock** lock icon button in the navigation bar. Clicking it prompts for the admin password, which is verified against `POST /api/verify-auth`.
+- Once authenticated, the **Edit Suite** and **Sync Releases** buttons appear, and the lock icon button transitions to **Lock**. Clicking the lock button again calls `POST /api/logout` to revoke the session, immediately locking the controls and re-hiding the management buttons.
+- Authentication issues a secure `HttpOnly; SameSite=Strict; Path=/api` session cookie (`artcraft_session`). Plaintext passwords are never stored in browser `sessionStorage` or `localStorage`, ensuring same-origin WebAssembly applications cannot inspect credentials.
 - State-changing API endpoints accept the `artcraft_session` cookie, an `X-Admin-Password: <password>` header, or an `Authorization: Bearer <session_or_password>` header.
 - Verification uses cryptographic pre-hashing with SHA-256 and constant-time comparison (`hmac.compare_digest`) to prevent timing and length-leak side-channels.
 - Failed authentication triggers non-blocking IP-based rate limiting (5 failed attempts per 60 seconds), returning `429 Too Many Requests` with a `Retry-After` header to prevent thread exhaustion DoS.
@@ -223,7 +225,7 @@ Click **Edit Suite** in the top navigation bar (if `ADMIN_PASSWORD` is configure
 - **✏️ Edit**: change title, category, tag, accent color, tagline, or description.
 - **👁️ Hide / Unhide**: hidden apps are excluded from browsing views and counts but stay editable in Edit Mode.
 - **🗑️ Delete & Purge**: removes the app from `catalog.json` and deletes its releases, version history, and icon from disk. **This cannot be undone.**
-- **🔒 Lock Session**: click the lock icon in the edit mode bar to clear the stored session password at any time.
+- **🔒 Lock Session**: click the lock icon in the top navigation bar to revoke the session and re-hide admin controls at any time.
 
 ### Option 2: `catalog.json`
 

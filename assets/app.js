@@ -195,12 +195,39 @@
 
     function setAuthenticated(val) {
       isAuthenticated = Boolean(val);
-      updateLockBtnVisibility();
+      updateAuthUI();
     }
 
-    function updateLockBtnVisibility() {
-      if (btnLockSession) {
-        btnLockSession.style.display = (isAuthRequired && isAuthenticated) ? 'inline-flex' : 'none';
+    function updateAuthUI() {
+      if (!isAuthRequired) {
+        if (btnAdminLock) btnAdminLock.style.display = 'none';
+        if (btnEditMode) btnEditMode.style.display = '';
+        if (btnSyncAll) btnSyncAll.style.display = '';
+        return;
+      }
+
+      if (btnAdminLock) {
+        btnAdminLock.style.display = 'inline-flex';
+        btnAdminLock.classList.toggle('unlocked', isAuthenticated);
+        btnAdminLock.title = isAuthenticated ? 'Lock admin session' : 'Unlock admin controls';
+        btnAdminLock.setAttribute('aria-label', isAuthenticated ? 'Lock admin session' : 'Unlock admin controls');
+
+        const iconLocked = btnAdminLock.querySelector('.lock-icon-locked');
+        const iconUnlocked = btnAdminLock.querySelector('.lock-icon-unlocked');
+        if (iconLocked) iconLocked.style.display = isAuthenticated ? 'none' : 'block';
+        if (iconUnlocked) iconUnlocked.style.display = isAuthenticated ? 'block' : 'none';
+
+        const label = document.getElementById('btn-admin-lock-label');
+        if (label) {
+          label.textContent = isAuthenticated ? 'Lock' : 'Unlock';
+        }
+      }
+
+      if (btnEditMode) {
+        btnEditMode.style.display = isAuthenticated ? '' : 'none';
+      }
+      if (btnSyncAll) {
+        btnSyncAll.style.display = isAuthenticated ? '' : 'none';
       }
     }
 
@@ -337,7 +364,7 @@
     const btnEditModeLabel = document.getElementById('btn-edit-mode-label');
     const editModeBar = document.getElementById('edit-mode-bar');
     const btnOpenAddModal = document.getElementById('btn-open-add-modal');
-    const btnLockSession = document.getElementById('btn-lock-session');
+    const btnAdminLock = document.getElementById('btn-admin-lock');
     const btnDoneEditing = document.getElementById('btn-done-editing');
 
     /* Auth Modal DOM references */
@@ -1112,7 +1139,7 @@
         } else if (res.headers.get('X-Auth-Required') !== null) {
           isAuthRequired = res.headers.get('X-Auth-Required') === 'true';
         }
-        updateLockBtnVisibility();
+        updateAuthUI();
         checkExistingAuthSession();
 
         rawApps = data.apps || [];
@@ -1738,8 +1765,14 @@
     if (btnDoneEditing) {
       btnDoneEditing.addEventListener('click', () => toggleEditMode(false));
     }
-    if (btnLockSession) {
-      btnLockSession.addEventListener('click', lockAdminSession);
+    if (btnAdminLock) {
+      btnAdminLock.addEventListener('click', () => {
+        if (isAuthenticated) {
+          lockAdminSession();
+        } else {
+          openAuthModal();
+        }
+      });
     }
     if (btnAuthClose) {
       btnAuthClose.addEventListener('click', closeAuthModal);

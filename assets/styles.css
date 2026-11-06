@@ -218,6 +218,39 @@
       box-shadow: 0 0 12px rgba(245, 158, 11, 0.3);
     }
 
+    [data-theme="artcraft"] #btn-admin-lock {
+      background: #12151f;
+      color: #cbd5e1;
+      border: 1px solid #242c3e;
+      border-radius: 3px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-weight: 600;
+      font-size: 0.76rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0.5rem 1rem;
+      transition: all 0.18s ease;
+    }
+
+    [data-theme="artcraft"] #btn-admin-lock:hover {
+      background: #191e2c;
+      color: #ffffff;
+      border-color: #4e7bfb;
+    }
+
+    [data-theme="artcraft"] #btn-admin-lock.unlocked {
+      background: rgba(16, 185, 129, 0.14);
+      color: #34d399;
+      border-color: rgba(16, 185, 129, 0.45);
+    }
+
+    [data-theme="artcraft"] #btn-admin-lock.unlocked:hover {
+      background: rgba(239, 68, 68, 0.16);
+      color: #f87171;
+      border-color: rgba(239, 68, 68, 0.5);
+      box-shadow: 0 0 12px rgba(239, 68, 68, 0.3);
+    }
+
     /* Category Filter Pills */
     [data-theme="artcraft"] .category-pills {
       gap: 0.45rem;
@@ -1788,6 +1821,57 @@
       color: #fbbf24;
       border-color: rgba(245, 158, 11, 0.5);
       box-shadow: 0 0 15px rgba(245, 158, 11, 0.25);
+    }
+
+    /* Admin Session Lock / Unlock Button (Glass Theme default) */
+    .btn-admin-lock {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.45rem 0.95rem;
+      background: var(--bg-glass);
+      color: var(--text-primary);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-full);
+      font-size: 0.8rem;
+      font-weight: 500;
+      font-family: inherit;
+      text-transform: none;
+      letter-spacing: normal;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      backdrop-filter: blur(8px);
+    }
+
+    .btn-admin-lock:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: var(--border-hover);
+      color: #ffffff;
+      box-shadow: 0 0 15px var(--border-glow);
+    }
+
+    .btn-admin-lock svg {
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
+      transition: transform 0.25s ease;
+    }
+
+    .btn-admin-lock:hover svg {
+      transform: scale(1.12);
+    }
+
+    .btn-admin-lock.unlocked {
+      background: rgba(16, 185, 129, 0.14);
+      color: #34d399;
+      border-color: rgba(16, 185, 129, 0.45);
+    }
+
+    .btn-admin-lock.unlocked:hover {
+      background: rgba(239, 68, 68, 0.16);
+      color: #f87171;
+      border-color: rgba(239, 68, 68, 0.5);
+      box-shadow: 0 0 15px rgba(239, 68, 68, 0.25);
     }
 
     /* Edit Mode Toolbar Banner */
