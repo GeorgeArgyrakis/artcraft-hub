@@ -475,127 +475,6 @@
     /* -------------------------------------------------------------
        Upstream ArtCraft Discovery & Auto-Add Helpers
        ------------------------------------------------------------- */
-    function showDiscoveryToast(app) {
-      if (!toastContainer) return;
-      const existing = document.getElementById(`toast-discovery-${app.app}`);
-      if (existing) return;
-
-      const toast = document.createElement('div');
-      toast.className = 'toast toast-discovery';
-      toast.id = `toast-discovery-${app.app}`;
-
-      toast.innerHTML = `
-        <div class="toast-icon">✨</div>
-        <div class="toast-content">
-          <div class="toast-title">New ArtCraft App Published</div>
-          <div class="toast-message">
-            <strong>${escapeHtml(app.title)}</strong> (${escapeHtml(app.category)}) was published upstream.
-          </div>
-          <div class="toast-discovery-actions">
-            <button type="button" class="btn-toast-add" id="btn-toast-add-${escapeHtml(app.app)}">
-              + Add to Suite
-            </button>
-            <button type="button" class="btn-toast-dismiss" id="btn-toast-dismiss-${escapeHtml(app.app)}" title="Dismiss for now">
-              Dismiss
-            </button>
-          </div>
-        </div>
-      `;
-
-      const addBtn = toast.querySelector(`#btn-toast-add-${app.app}`);
-      if (addBtn) {
-        addBtn.addEventListener('click', () => {
-          if (isAuthRequired && !isAuthenticated) {
-            openAuthModal(() => autoAddDiscoveredApp(app));
-          } else {
-            autoAddDiscoveredApp(app);
-          }
-        });
-      }
-
-      const dismissBtn = toast.querySelector(`#btn-toast-dismiss-${app.app}`);
-      if (dismissBtn) {
-        dismissBtn.addEventListener('click', () => {
-          dismissDiscoveredApp(app.app);
-          toast.style.animation = 'toastIn 0.2s reverse forwards';
-          setTimeout(() => toast.remove(), 250);
-        });
-      }
-
-      toastContainer.appendChild(toast);
-    }
-
-    function showDiscoveryGroupToast(apps) {
-      if (!toastContainer) return;
-      const existing = document.getElementById('toast-discovery-group');
-      if (existing) return;
-
-      const toast = document.createElement('div');
-      toast.className = 'toast toast-discovery';
-      toast.id = 'toast-discovery-group';
-
-      const names = apps.map(a => escapeHtml(a.title)).join(', ');
-
-      toast.innerHTML = `
-        <div class="toast-icon">✨</div>
-        <div class="toast-content">
-          <div class="toast-title">${apps.length} New ArtCraft Apps Published</div>
-          <div class="toast-message">
-            <strong>${names}</strong> are now available.
-          </div>
-          <div class="toast-discovery-actions">
-            ${apps.map(a => `
-              <button type="button" class="btn-toast-add btn-group-add" data-app="${escapeHtml(a.app)}">
-                + Add ${escapeHtml(a.title)}
-              </button>
-            `).join('')}
-            <button type="button" class="btn-toast-dismiss" id="btn-group-dismiss">
-              Dismiss All
-            </button>
-          </div>
-        </div>
-      `;
-
-      toast.querySelectorAll('.btn-group-add').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const app = apps.find(a => a.app === btn.dataset.app);
-          if (app) {
-            if (isAuthRequired && !isAuthenticated) {
-              openAuthModal(() => autoAddDiscoveredApp(app));
-            } else {
-              autoAddDiscoveredApp(app);
-            }
-          }
-        });
-      });
-
-      const dismissBtn = toast.querySelector('#btn-group-dismiss');
-      if (dismissBtn) {
-        dismissBtn.addEventListener('click', () => {
-          apps.forEach(a => dismissDiscoveredApp(a.app));
-          toast.style.animation = 'toastIn 0.2s reverse forwards';
-          setTimeout(() => toast.remove(), 250);
-        });
-      }
-
-      toastContainer.appendChild(toast);
-    }
-
-    function notifyDiscoveredApps(apps) {
-      if (!apps || !Array.isArray(apps) || apps.length === 0) return;
-      let dismissed = [];
-      try {
-        dismissed = JSON.parse(sessionStorage.getItem('artcraft_dismissed_discoveries') || '[]');
-      } catch (e) {}
-
-      const pending = apps.filter(a => a && a.app && !APP_CATALOG[a.app] && !dismissed.includes(a.app));
-      if (pending.length === 1) {
-        showDiscoveryToast(pending[0]);
-      } else if (pending.length > 1) {
-        showDiscoveryGroupToast(pending);
-      }
-    }
-
     async function autoAddDiscoveredApp(app) {
       showToast('Adding Application', `Registering ${app.title} and starting release download...`, 'info');
 
@@ -628,18 +507,6 @@
         const data = await res.json();
         if (data.ok) {
           showToast('App Added!', `🎉 ${app.title} added to ArtCraft Hub!`, 'success');
-          const toastEl = document.getElementById(`toast-discovery-${app.app}`);
-          if (toastEl) toastEl.remove();
-          const groupToast = document.getElementById('toast-discovery-group');
-          if (groupToast) {
-            const remaining = discoveredAppsList.filter(a => a.app !== app.app && !APP_CATALOG[a.app]);
-            if (remaining.length === 0) {
-              groupToast.remove();
-            } else {
-              const btn = groupToast.querySelector(`.btn-group-add[data-app="${app.app}"]`);
-              if (btn) btn.remove();
-            }
-          }
           discoveredAppsList = discoveredAppsList.filter(a => a.app !== app.app);
           updateDiscoveryBanner();
           await fetchManifest();
@@ -660,11 +527,6 @@
           sessionStorage.setItem('artcraft_dismissed_discoveries', JSON.stringify(dismissed));
         }
       } catch (e) {}
-      const toastEl = document.getElementById(`toast-discovery-${appKey}`);
-      if (toastEl) {
-        toastEl.style.animation = 'toastIn 0.2s reverse forwards';
-        setTimeout(() => toastEl.remove(), 250);
-      }
       updateDiscoveryBanner();
     }
 
@@ -1558,7 +1420,6 @@
             updateSystemStatus(sys);
             showToast('Sync Complete', 'Applications updated successfully.', 'success');
             await fetchManifest();
-            notifyDiscoveredApps(discoveredAppsList);
           }
         }
       } catch (e) {

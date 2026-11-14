@@ -1750,57 +1750,6 @@
       border-left: 4px solid var(--accent-rose);
     }
 
-    .toast.toast-discovery {
-      border-left: 4px solid #4E7BFB;
-      background: rgba(20, 24, 38, 0.98);
-      border-color: rgba(78, 123, 251, 0.35);
-      box-shadow: 0 15px 35px rgba(0, 0, 0, 0.7), 0 0 20px rgba(78, 123, 251, 0.15);
-      min-width: 320px;
-    }
-
-    .toast-discovery-actions {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      margin-top: 0.65rem;
-    }
-
-    .btn-toast-add {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.35rem;
-      padding: 0.35rem 0.8rem;
-      background: #4E7BFB;
-      color: #ffffff;
-      border: none;
-      border-radius: var(--radius-sm);
-      font-size: 0.76rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.15s ease;
-    }
-
-    .btn-toast-add:hover {
-      filter: brightness(1.15);
-      transform: translateY(-1px);
-    }
-
-    .btn-toast-dismiss {
-      padding: 0.35rem 0.65rem;
-      background: transparent;
-      border: 1px solid var(--border-subtle);
-      color: var(--text-secondary);
-      border-radius: var(--radius-sm);
-      font-size: 0.76rem;
-      cursor: pointer;
-      transition: all 0.15s ease;
-    }
-
-    .btn-toast-dismiss:hover {
-      color: var(--text-primary);
-      background: rgba(255, 255, 255, 0.08);
-    }
-
     .toast-icon {
       font-size: 1.1rem;
       flex-shrink: 0;

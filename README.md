@@ -222,7 +222,7 @@ An app can be added only if its GitHub repository publishes **releases** that in
 
 During each sync (manual or cron-scheduled), ArtCraft Hub cross-checks [getartcraft.com](https://getartcraft.com) and the `storytold` GitHub organization for newly published ArtCraft apps not yet in your `catalog.json`:
 
-- **Notification & Banner:** when a new app is detected (e.g. `AniCraft`, `MaterialCraft`), an interactive toast notification and top banner appear on the dashboard.
+- **Top Banner Alert:** when a new app is detected (e.g. `AniCraft`, `MaterialCraft`), an alert banner appears at the top of the dashboard.
 - **1-Click Addition:** click **+ Add to Suite** to automatically register the app with curated metadata and begin downloading its release immediately.
 - **Admin Authentication:** if `ADMIN_PASSWORD` is configured, clicking add will prompt for the admin password to unlock management first.
 
