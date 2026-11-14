@@ -439,6 +439,33 @@ def read_request_body(handler: BaseHTTPRequestHandler) -> Tuple[Optional[bytes],
         return None, (400, {"ok": False, "error": f"Failed reading request body: {exc}"})
 
 
+def verify_admin_request(headers: Any) -> bool:
+    """Verify request headers or cookies against ADMIN_PASSWORD or active session."""
+    if not is_auth_required():
+        return True
+
+    expected = get_admin_password()
+    session_token = get_cookie_value(headers, SESSION_COOKIE_NAME)
+    if session_token and session_manager.is_valid(session_token):
+        return True
+
+    provided = ""
+    if hasattr(headers, "get"):
+        provided = headers.get("X-Admin-Password", "") or ""
+        if not provided:
+            auth_hdr = headers.get("Authorization", "") or ""
+            if auth_hdr.startswith("Bearer "):
+                provided = auth_hdr[7:].strip()
+
+    if provided:
+        if session_manager.is_valid(provided):
+            return True
+        if verify_password(expected, provided):
+            return True
+
+    return False
+
+
 def check_admin_auth(handler: BaseHTTPRequestHandler) -> Tuple[bool, Optional[Tuple[int, Dict[str, Any], Dict[str, str]]]]:
     """
     Check if request is authorized as admin.
@@ -457,28 +484,10 @@ def check_admin_auth(handler: BaseHTTPRequestHandler) -> Tuple[bool, Optional[Tu
             "retry_after": retry_after
         }, {"Retry-After": str(retry_after)})
 
-    expected = get_admin_password()
-
-    # 1. Check HttpOnly session cookie
-    session_token = get_cookie_value(handler.headers, SESSION_COOKIE_NAME)
-    if session_token and session_manager.is_valid(session_token):
-        return True, None
-
-    # 2. Check X-Admin-Password header
-    provided_pw = handler.headers.get("X-Admin-Password", "") or ""
-    if provided_pw and verify_password(expected, provided_pw):
+    headers = getattr(handler, "headers", {})
+    if verify_admin_request(headers):
         rate_limiter.record_success(client_ip)
         return True, None
-
-    # 3. Check Authorization: Bearer <token_or_pw>
-    auth_hdr = handler.headers.get("Authorization", "") or ""
-    if auth_hdr.startswith("Bearer "):
-        bearer_val = auth_hdr[7:].strip()
-        if session_manager.is_valid(bearer_val):
-            return True, None
-        if verify_password(expected, bearer_val):
-            rate_limiter.record_success(client_ip)
-            return True, None
 
     # Record failure on unauthorized access attempt
     locked, retry_after = rate_limiter.record_failure(client_ip)
