@@ -193,6 +193,144 @@ sync_app_icon() {
 }
 
 # ---------------------------------------------------------------------------
+# Curated metadata lookup for discovered ArtCraft apps
+# ---------------------------------------------------------------------------
+get_app_metadata() {
+  local app="$1"
+  local title=""
+  local category=""
+  local categoryTag=""
+  local accentColor=""
+  local tagline=""
+  local desc=""
+
+  case "${app}" in
+    anicraft)
+      title="AniCraft"
+      category="Graphics & Photo"
+      categoryTag="2D ANIMATION & TIMELINE"
+      accentColor="#a855f7"
+      tagline="2D Vector Animation Studio"
+      desc="Open-source 2D animation, vector tweens, and interactive timelines."
+      ;;
+    materialcraft)
+      title="MaterialCraft"
+      category="3D & CAD"
+      categoryTag="PROCEDURAL MATERIAL STUDIO"
+      accentColor="#e11d48"
+      tagline="Procedural PBR Material Authoring"
+      desc="Open-source procedural PBR material designer and shader authoring in pure Rust."
+      ;;
+    solidcraft)
+      title="SolidCraft"
+      category="3D & CAD"
+      categoryTag="SOLID MODELING"
+      accentColor="#0284c7"
+      tagline="Parametric Solid Modeling"
+      desc="Open-source boundary representation and parametric solid modeling engine."
+      ;;
+    *)
+      # Fallback heuristic: title-case slug
+      title=$(echo "${app}" | sed -E 's/[-_]/ /g; s/\b([a-z])/\U\1/g; s/ //g')
+      category="Graphics & Photo"
+      categoryTag="CREATIVE STUDIO"
+      accentColor="#4f46e5"
+      tagline="${title} Studio App"
+      desc="Open-source ${title} creative application."
+      ;;
+  esac
+
+  jq -n \
+    --arg app "${app}" \
+    --arg repo "storytold/${app}" \
+    --arg title "${title}" \
+    --arg category "${category}" \
+    --arg categoryTag "${categoryTag}" \
+    --arg accentColor "${accentColor}" \
+    --arg tagline "${tagline}" \
+    --arg desc "${desc}" \
+    '{app: $app, repo: $repo, title: $title, category: $category, categoryTag: $categoryTag, accentColor: $accentColor, tagline: $tagline, desc: $desc, visible: true}'
+}
+
+# ---------------------------------------------------------------------------
+# Check if new ArtCraft apps were published upstream
+# ---------------------------------------------------------------------------
+discover_new_apps() {
+  local discovered_file="${TARGET_DIR}/.discovered_apps.json"
+  echo "Checking for newly published ArtCraft apps..."
+
+  local candidates=()
+
+  # 1. Fetch from https://getartcraft.com/ (authoritative list of ArtCraft apps)
+  local site_html
+  site_html=$(curl -sfL --retry 2 --max-time 10 "https://getartcraft.com/" 2>/dev/null || echo "")
+  if [ -n "${site_html}" ]; then
+    local web_apps
+    web_apps=$(echo "${site_html}" | grep -oE '/images/apps/[a-zA-Z0-9_-]+/' | sed -e 's|/images/apps/||' -e 's|/||' | sort -u || true)
+    while IFS= read -r app || [ -n "$app" ]; do
+      [[ -z "$app" ]] && continue
+      candidates+=("${app}")
+    done <<< "${web_apps}"
+  fi
+
+  # 2. Query GitHub public repos under storytold organization
+  local gh_repos
+  gh_repos=$(curl -sfL --retry 2 --max-time 10 "${auth_header[@]}" \
+    -H "Accept: application/vnd.github+json" \
+    -H "X-GitHub-Api-Version: 2022-11-28" \
+    "https://api.github.com/orgs/storytold/repos?type=public&per_page=100" 2>/dev/null || echo "[]")
+  if [ -n "${gh_repos}" ] && [ "${gh_repos}" != "[]" ]; then
+    local repo_apps
+    repo_apps=$(echo "${gh_repos}" | jq -r '.[]? | select(.name | test("craft"; "i")) | .name' 2>/dev/null || true)
+    while IFS= read -r app || [ -n "$app" ]; do
+      [[ -z "$app" ]] && continue
+      candidates+=("${app}")
+    done <<< "${repo_apps}"
+  fi
+
+  # Deduplicate candidate apps and filter out non-app utility repos
+  local unique_candidates=()
+  if [ ${#candidates[@]} -gt 0 ]; then
+    mapfile -t unique_candidates < <(printf '%s\n' "${candidates[@]}" | tr '[:upper:]' '[:lower:]' | grep -E '^[a-z0-9_-]+$' | grep -vE '^(craft-libs|craft-update|artcraft-hub)$' | sort -u)
+  fi
+
+  # Read existing catalog keys to exclude already-registered applications
+  local existing_keys=()
+  if [ -f "${CATALOG_FILE}" ]; then
+    mapfile -t existing_keys < <(jq -r 'keys[]' "${CATALOG_FILE}" 2>/dev/null || true)
+  fi
+
+  local new_discovered=()
+  for c in "${unique_candidates[@]}"; do
+    local is_known=false
+    for k in "${existing_keys[@]}"; do
+      if [ "$c" = "$k" ]; then
+        is_known=true
+        break
+      fi
+    done
+    if [ "$is_known" = false ]; then
+      new_discovered+=("$c")
+    fi
+  done
+
+  if [ ${#new_discovered[@]} -gt 0 ]; then
+    echo "  [DISCOVER] Found ${#new_discovered[@]} new ArtCraft app(s) not in catalog: ${new_discovered[*]}"
+    local discovered_json="[]"
+    for app in "${new_discovered[@]}"; do
+      sync_app_icon "storytold/${app}" "${app}"
+      local meta
+      meta=$(get_app_metadata "${app}")
+      discovered_json=$(jq -n --argjson list "${discovered_json}" --argjson item "${meta}" '$list + [$item]')
+    done
+    echo "${discovered_json}" > "${discovered_file}" 2>/dev/null || true
+  else
+    echo "  [DISCOVER] No new ArtCraft apps found."
+    echo "[]" > "${discovered_file}" 2>/dev/null || true
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # Build/Update the suite dashboard index.html
 # ---------------------------------------------------------------------------
 build_dashboard() {
@@ -345,11 +483,18 @@ sync_releases() {
     fi
   done
 
+  # Check for newly published ArtCraft apps upstream
+  discover_new_apps
+
   build_dashboard
 
   local ts
   ts=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-  echo "{\"status\":\"idle\",\"last_sync\":\"${ts}\",\"last_success\":true}" > "${TARGET_DIR}/.sync_status.json" 2>/dev/null || true
+  local discovered_count=0
+  if [ -f "${TARGET_DIR}/.discovered_apps.json" ]; then
+    discovered_count=$(jq '. | length' "${TARGET_DIR}/.discovered_apps.json" 2>/dev/null || echo 0)
+  fi
+  echo "{\"status\":\"idle\",\"last_sync\":\"${ts}\",\"last_success\":true,\"discovered_count\":${discovered_count}}" > "${TARGET_DIR}/.sync_status.json" 2>/dev/null || true
   rm -f "/tmp/sync.lock" 2>/dev/null || true
 
   echo "[$(date -u +'%Y-%m-%d %H:%M:%SZ')] Sync complete."

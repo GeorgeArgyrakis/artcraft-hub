@@ -490,5 +490,98 @@ class TestRequestBodyValidation(unittest.TestCase):
         self.assertEqual(err[0], 400)
 
 
+class TestAppDiscovery(unittest.TestCase):
+    """Test newly published app discovery, filtering, and catalog integration."""
+
+    def setUp(self):
+        self.test_dir = tempfile.mkdtemp(prefix="artcraft_disc_test_")
+        self.orig_target_dir = switch_api.TARGET_DIR
+        self.orig_status_file = switch_api.STATUS_FILE
+        self.orig_catalog_file = switch_api.CATALOG_FILE
+        self.orig_local_catalog = switch_api.LOCAL_CATALOG_FILE
+        self.orig_discovered_file = switch_api.DISCOVERED_APPS_FILE
+
+        switch_api.TARGET_DIR = self.test_dir
+        switch_api.STATUS_FILE = Path(self.test_dir) / ".sync_status.json"
+        switch_api.DISCOVERED_APPS_FILE = Path(self.test_dir) / ".discovered_apps.json"
+
+        self.catalog_file = Path(self.test_dir) / "catalog.json"
+        switch_api.write_json(self.catalog_file, {
+            "photocraft": {
+                "repo": "storytold/photocraft",
+                "title": "PhotoCraft",
+                "visible": True
+            }
+        })
+        switch_api.CATALOG_FILE = self.catalog_file
+        switch_api.LOCAL_CATALOG_FILE = self.catalog_file
+
+    def tearDown(self):
+        switch_api.TARGET_DIR = self.orig_target_dir
+        switch_api.STATUS_FILE = self.orig_status_file
+        switch_api.CATALOG_FILE = self.orig_catalog_file
+        switch_api.LOCAL_CATALOG_FILE = self.orig_local_catalog
+        switch_api.DISCOVERED_APPS_FILE = self.orig_discovered_file
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def test_get_discovered_apps_when_empty(self):
+        self.assertEqual(switch_api.get_discovered_apps(), [])
+
+    def test_get_discovered_apps_filtering(self):
+        # Write mock discovered apps: photocraft (already in catalog) and anicraft (new)
+        mock_discovered = [
+            {"app": "photocraft", "repo": "storytold/photocraft", "title": "PhotoCraft"},
+            {"app": "anicraft", "repo": "storytold/anicraft", "title": "AniCraft"},
+            {"app": "materialcraft", "repo": "storytold/materialcraft", "title": "MaterialCraft"},
+        ]
+        switch_api.write_json(switch_api.DISCOVERED_APPS_FILE, mock_discovered)
+
+        apps = switch_api.get_discovered_apps()
+        app_names = [a["app"] for a in apps]
+        self.assertNotIn("photocraft", app_names)
+        self.assertIn("anicraft", app_names)
+        self.assertIn("materialcraft", app_names)
+        self.assertEqual(len(apps), 2)
+
+    def test_status_and_manifest_include_discovered(self):
+        mock_discovered = [
+            {"app": "anicraft", "repo": "storytold/anicraft", "title": "AniCraft"}
+        ]
+        switch_api.write_json(switch_api.DISCOVERED_APPS_FILE, mock_discovered)
+
+        status = switch_api.get_status()
+        self.assertIn("discovered_apps", status)
+        self.assertEqual(status["discovered_count"], 1)
+
+        manifest = switch_api.get_manifest()
+        self.assertIn("discovered_apps", manifest)
+        self.assertEqual(len(manifest["discovered_apps"]), 1)
+        self.assertEqual(manifest["discovered_apps"][0]["app"], "anicraft")
+
+    def test_add_catalog_app_cleans_discovered(self):
+        mock_discovered = [
+            {"app": "anicraft", "repo": "storytold/anicraft", "title": "AniCraft"},
+            {"app": "materialcraft", "repo": "storytold/materialcraft", "title": "MaterialCraft"},
+        ]
+        switch_api.write_json(switch_api.DISCOVERED_APPS_FILE, mock_discovered)
+
+        # Add anicraft to catalog
+        resp, code = switch_api.add_or_update_catalog_app("anicraft", {
+            "repo": "storytold/anicraft",
+            "title": "AniCraft",
+            "category": "Graphics & Photo"
+        })
+        self.assertEqual(code, 200)
+
+        # Check discovered apps now only has materialcraft
+        remaining = switch_api.get_discovered_apps()
+        remaining_names = [a["app"] for a in remaining]
+        self.assertEqual(remaining_names, ["materialcraft"])
+
+        # Also check file content directly
+        on_disk = switch_api.read_json(switch_api.DISCOVERED_APPS_FILE)
+        self.assertEqual([a["app"] for a in on_disk], ["materialcraft"])
+
+
 if __name__ == "__main__":
     unittest.main()

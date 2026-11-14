@@ -356,6 +356,12 @@
     const gridStatusCount = document.getElementById('grid-status-count');
     const toastContainer = document.getElementById('toast-container');
 
+    /* Discovery Banner & Discovered Apps */
+    let discoveredAppsList = [];
+    const discoveryBanner = document.getElementById('discovery-banner');
+    const discoveryBannerText = document.getElementById('discovery-banner-text');
+    const discoveryBannerActions = document.getElementById('discovery-banner-actions');
+
     /* Edit Mode & Modal DOM references */
     let isEditMode = false;
     let appToDelete = null;
@@ -463,6 +469,209 @@
         return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
       } catch (e) {
         return 'Recently';
+      }
+    }
+
+    /* -------------------------------------------------------------
+       Upstream ArtCraft Discovery & Auto-Add Helpers
+       ------------------------------------------------------------- */
+    function showDiscoveryToast(app) {
+      if (!toastContainer) return;
+      const existing = document.getElementById(`toast-discovery-${app.app}`);
+      if (existing) return;
+
+      const toast = document.createElement('div');
+      toast.className = 'toast toast-discovery';
+      toast.id = `toast-discovery-${app.app}`;
+
+      toast.innerHTML = `
+        <div class="toast-icon">✨</div>
+        <div class="toast-content">
+          <div class="toast-title">New ArtCraft App Published</div>
+          <div class="toast-message">
+            <strong>${escapeHtml(app.title)}</strong> (${escapeHtml(app.category)}) was published upstream.
+          </div>
+          <div class="toast-discovery-actions">
+            <button type="button" class="btn-toast-add" id="btn-toast-add-${escapeHtml(app.app)}">
+              + Add to Suite
+            </button>
+            <button type="button" class="btn-toast-dismiss" id="btn-toast-dismiss-${escapeHtml(app.app)}" title="Dismiss for now">
+              Dismiss
+            </button>
+          </div>
+        </div>
+      `;
+
+      const addBtn = toast.querySelector(`#btn-toast-add-${app.app}`);
+      if (addBtn) {
+        addBtn.addEventListener('click', () => {
+          if (isAuthRequired && !isAuthenticated) {
+            openAuthModal(() => autoAddDiscoveredApp(app));
+          } else {
+            autoAddDiscoveredApp(app);
+          }
+        });
+      }
+
+      const dismissBtn = toast.querySelector(`#btn-toast-dismiss-${app.app}`);
+      if (dismissBtn) {
+        dismissBtn.addEventListener('click', () => {
+          dismissDiscoveredApp(app.app);
+          toast.style.animation = 'toastIn 0.2s reverse forwards';
+          setTimeout(() => toast.remove(), 250);
+        });
+      }
+
+      toastContainer.appendChild(toast);
+    }
+
+    function notifyDiscoveredApps(apps) {
+      if (!apps || !Array.isArray(apps) || apps.length === 0) return;
+      let dismissed = [];
+      try {
+        dismissed = JSON.parse(sessionStorage.getItem('artcraft_dismissed_discoveries') || '[]');
+      } catch (e) {}
+
+      const pending = apps.filter(a => a && a.app && !APP_CATALOG[a.app] && !dismissed.includes(a.app));
+      pending.forEach(app => {
+        showDiscoveryToast(app);
+      });
+    }
+
+    async function autoAddDiscoveredApp(app) {
+      showToast('Adding Application', `Registering ${app.title} and starting release download...`, 'info');
+
+      const payload = {
+        app: app.app,
+        repo: app.repo || `storytold/${app.app}`,
+        title: app.title,
+        category: app.category || 'Graphics & Photo',
+        categoryTag: app.categoryTag || app.category.toUpperCase(),
+        accentColor: app.accentColor || '#2563eb',
+        tagline: app.tagline || `${app.title} Studio App`,
+        desc: app.desc || `Open-source ${app.title} creative application.`,
+        visible: true,
+        sync_now: true
+      };
+
+      try {
+        const res = await fetch('/api/catalog', {
+          method: 'POST',
+          headers: getApiHeaders(),
+          body: JSON.stringify(payload)
+        });
+
+        if (res.status === 401) {
+          setAuthenticated(false);
+          openAuthModal(() => autoAddDiscoveredApp(app));
+          return;
+        }
+
+        const data = await res.json();
+        if (data.ok) {
+          showToast('App Added!', `🎉 ${app.title} added to ArtCraft Hub!`, 'success');
+          const toastEl = document.getElementById(`toast-discovery-${app.app}`);
+          if (toastEl) toastEl.remove();
+          discoveredAppsList = discoveredAppsList.filter(a => a.app !== app.app);
+          updateDiscoveryBanner();
+          await fetchManifest();
+          startSyncPolling();
+        } else {
+          showToast('Failed to Add', data.error || 'Could not add application.', 'error');
+        }
+      } catch (err) {
+        showToast('Network Error', err.message, 'error');
+      }
+    }
+
+    function dismissDiscoveredApp(appKey) {
+      try {
+        const dismissed = JSON.parse(sessionStorage.getItem('artcraft_dismissed_discoveries') || '[]');
+        if (!dismissed.includes(appKey)) {
+          dismissed.push(appKey);
+          sessionStorage.setItem('artcraft_dismissed_discoveries', JSON.stringify(dismissed));
+        }
+      } catch (e) {}
+      const toastEl = document.getElementById(`toast-discovery-${appKey}`);
+      if (toastEl) {
+        toastEl.style.animation = 'toastIn 0.2s reverse forwards';
+        setTimeout(() => toastEl.remove(), 250);
+      }
+      updateDiscoveryBanner();
+    }
+
+    function updateDiscoveryBanner() {
+      if (!discoveryBanner || !discoveryBannerText || !discoveryBannerActions) return;
+
+      let dismissed = [];
+      try {
+        dismissed = JSON.parse(sessionStorage.getItem('artcraft_dismissed_discoveries') || '[]');
+      } catch (e) {}
+
+      const pending = discoveredAppsList.filter(a => a && a.app && !APP_CATALOG[a.app] && !dismissed.includes(a.app));
+
+      if (pending.length === 0) {
+        discoveryBanner.style.display = 'none';
+        discoveryBanner.classList.remove('active');
+        return;
+      }
+
+      discoveryBanner.style.display = 'flex';
+      discoveryBanner.classList.add('active');
+
+      if (pending.length === 1) {
+        const app = pending[0];
+        discoveryBannerText.innerHTML = `<strong>${escapeHtml(app.title)}</strong> (${escapeHtml(app.category)}) was published upstream and is ready to add!`;
+        discoveryBannerActions.innerHTML = `
+          <button type="button" class="btn-discovery-add" id="btn-banner-add-${escapeHtml(app.app)}">
+            + Add ${escapeHtml(app.title)}
+          </button>
+          <button type="button" class="btn-discovery-dismiss" id="btn-banner-dismiss-${escapeHtml(app.app)}" title="Dismiss for this session">
+            Dismiss
+          </button>
+        `;
+        const addBtn = document.getElementById(`btn-banner-add-${app.app}`);
+        if (addBtn) {
+          addBtn.addEventListener('click', () => {
+            if (isAuthRequired && !isAuthenticated) {
+              openAuthModal(() => autoAddDiscoveredApp(app));
+            } else {
+              autoAddDiscoveredApp(app);
+            }
+          });
+        }
+        const disBtn = document.getElementById(`btn-banner-dismiss-${app.app}`);
+        if (disBtn) {
+          disBtn.addEventListener('click', () => {
+            dismissDiscoveredApp(app.app);
+          });
+        }
+      } else {
+        const names = pending.map(a => escapeHtml(a.title)).join(', ');
+        discoveryBannerText.innerHTML = `<strong>${pending.length} new ArtCraft apps published:</strong> ${names}`;
+        discoveryBannerActions.innerHTML = '';
+        pending.forEach(app => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'btn-discovery-add';
+          btn.textContent = `+ Add ${app.title}`;
+          btn.addEventListener('click', () => {
+            if (isAuthRequired && !isAuthenticated) {
+              openAuthModal(() => autoAddDiscoveredApp(app));
+            } else {
+              autoAddDiscoveredApp(app);
+            }
+          });
+          discoveryBannerActions.appendChild(btn);
+        });
+        const disBtn = document.createElement('button');
+        disBtn.type = 'button';
+        disBtn.className = 'btn-discovery-dismiss';
+        disBtn.textContent = 'Dismiss All';
+        disBtn.addEventListener('click', () => {
+          pending.forEach(a => dismissDiscoveredApp(a.app));
+        });
+        discoveryBannerActions.appendChild(disBtn);
       }
     }
 
@@ -1149,6 +1358,11 @@
         if (data.system) {
           updateSystemStatus(data.system);
         }
+
+        if (data.discovered_apps && Array.isArray(data.discovered_apps)) {
+          discoveredAppsList = data.discovered_apps;
+          updateDiscoveryBanner();
+        }
       } catch (err) {
         console.error('Failed to load manifest:', err);
         appsGrid.innerHTML = `
@@ -1276,6 +1490,7 @@
             updateSystemStatus(sys);
             showToast('Sync Complete', 'Applications updated successfully.', 'success');
             await fetchManifest();
+            notifyDiscoveredApps(discoveredAppsList);
           }
         }
       } catch (e) {

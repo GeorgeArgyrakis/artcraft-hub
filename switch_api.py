@@ -29,6 +29,7 @@ import tempfile
 import threading
 import time
 import subprocess
+import urllib.request
 from datetime import datetime, timezone
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -42,6 +43,7 @@ CATALOG_FILE: Path = Path(os.environ.get("CATALOG_FILE", "/config/catalog.json")
 BUNDLED_CATALOG_FILE: Path = Path("/usr/local/share/artcraft/catalog.json")
 LOCAL_CATALOG_FILE: Path = Path(__file__).resolve().parent / "config" / "catalog.json"
 SYNC_SCRIPT_PATH: Path = Path(os.environ.get("SYNC_SCRIPT_PATH", "/usr/local/bin/sync.sh"))
+DISCOVERED_APPS_FILE: Path = Path(TARGET_DIR) / ".discovered_apps.json"
 
 APP_NAME_RE: re.Pattern = re.compile(r"^[A-Za-z0-9_\-]+$")
 TAG_NAME_RE: re.Pattern = re.compile(r"^(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._\-]*$")
@@ -146,6 +148,8 @@ def get_status() -> Dict[str, Any]:
             if d.is_dir() and APP_NAME_RE.fullmatch(d.name) and (d / "versions.json").is_file():
                 apps_list.append(d.name)
 
+    discovered = get_discovered_apps()
+
     return {
         "status": "syncing" if is_syncing else status_data.get("status", "idle"),
         "is_syncing": is_syncing,
@@ -155,6 +159,8 @@ def get_status() -> Dict[str, Any]:
         "schedule": os.environ.get("SYNC_CRON", "0 0 * * *"),
         "timezone": os.environ.get("TZ", "UTC"),
         "auth_required": is_auth_required(),
+        "discovered_apps": discovered,
+        "discovered_count": len(discovered),
     }
 
 
@@ -522,6 +528,17 @@ def add_or_update_catalog_app(app_key: str, meta: Dict[str, Any]) -> Tuple[Dict[
     if not save_catalog(catalog):
         return {"ok": False, "error": "Failed to save catalog.json"}, 500
 
+    # Clean up from discovered apps if present
+    if DISCOVERED_APPS_FILE.is_file():
+        try:
+            discovered = read_json(DISCOVERED_APPS_FILE)
+            if isinstance(discovered, list):
+                updated = [d for d in discovered if isinstance(d, dict) and d.get("app") != app_key]
+                if len(updated) != len(discovered):
+                    write_json(DISCOVERED_APPS_FILE, updated)
+        except Exception:
+            pass
+
     return {"ok": True, "app": app_key, "entry": entry}, 200
 
 
@@ -608,6 +625,137 @@ def resolve_app_preview(app_name: str) -> Optional[str]:
     return None
 
 
+KNOWN_APP_METADATA: Dict[str, Dict[str, str]] = {
+    "anicraft": {
+        "title": "AniCraft",
+        "category": "Graphics & Photo",
+        "categoryTag": "2D ANIMATION & TIMELINE",
+        "accentColor": "#a855f7",
+        "tagline": "2D Vector Animation Studio",
+        "desc": "Open-source 2D animation, vector tweens, and interactive timelines.",
+    },
+    "materialcraft": {
+        "title": "MaterialCraft",
+        "category": "3D & CAD",
+        "categoryTag": "PROCEDURAL MATERIAL STUDIO",
+        "accentColor": "#e11d48",
+        "tagline": "Procedural PBR Material Authoring",
+        "desc": "Open-source procedural PBR material designer and shader authoring in pure Rust.",
+    },
+    "solidcraft": {
+        "title": "SolidCraft",
+        "category": "3D & CAD",
+        "categoryTag": "SOLID MODELING",
+        "accentColor": "#0284c7",
+        "tagline": "Parametric Solid Modeling",
+        "desc": "Open-source boundary representation and parametric solid modeling engine.",
+    },
+}
+
+
+def get_discovered_apps() -> List[Dict[str, Any]]:
+    """Return list of discovered upstream ArtCraft apps not yet registered in catalog.json."""
+    catalog = get_catalog()
+    discovered = read_json(DISCOVERED_APPS_FILE)
+    if not isinstance(discovered, list):
+        return []
+    filtered = []
+    for item in discovered:
+        if isinstance(item, dict) and item.get("app") and item["app"] not in catalog:
+            app_key = item["app"]
+            item["icon"] = resolve_app_icon(app_key)
+            item["preview"] = resolve_app_preview(app_key)
+            filtered.append(item)
+    return filtered
+
+
+def discover_upstream_apps() -> List[Dict[str, Any]]:
+    """
+    Query getartcraft.com and GitHub storytold organization for new Craft apps not yet in catalog.json.
+    Writes result to DISCOVERED_APPS_FILE and returns discovered app list.
+    """
+    catalog = get_catalog()
+    candidate_slugs = set()
+
+    # 1. Check getartcraft.com (authoritative list of ArtCraft apps)
+    try:
+        req = urllib.request.Request(
+            "https://getartcraft.com/",
+            headers={"User-Agent": "ArtCraftHub/2.0"}
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            html = resp.read().decode("utf-8", errors="replace")
+            for match in re.findall(r"/images/apps/([a-zA-Z0-9_\-]+)/", html):
+                candidate_slugs.add(match.lower())
+    except Exception:
+        pass
+
+    # 2. Check GitHub organization public repos
+    try:
+        gh_headers = {
+            "User-Agent": "ArtCraftHub/2.0",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        token = os.environ.get("GITHUB_TOKEN", "").strip()
+        if token:
+            gh_headers["Authorization"] = f"Bearer {token}"
+        req = urllib.request.Request(
+            "https://api.github.com/orgs/storytold/repos?type=public&per_page=100",
+            headers=gh_headers
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            repos_data = json.loads(resp.read().decode("utf-8"))
+            if isinstance(repos_data, list):
+                for r in repos_data:
+                    name = (r.get("name") or "").lower()
+                    if ("craft" in name or name == "craft-anything") and name not in ("craft-libs", "craft-update", "artcraft-hub"):
+                        candidate_slugs.add(name)
+    except Exception:
+        pass
+
+    discovered = []
+    for slug in sorted(candidate_slugs):
+        if slug in catalog:
+            continue
+        if slug in KNOWN_APP_METADATA:
+            m = KNOWN_APP_METADATA[slug]
+            entry = {
+                "app": slug,
+                "repo": f"storytold/{slug}",
+                "title": m["title"],
+                "category": m["category"],
+                "categoryTag": m["categoryTag"],
+                "accentColor": m["accentColor"],
+                "tagline": m["tagline"],
+                "desc": m["desc"],
+                "visible": True,
+            }
+        else:
+            title = re.sub(r"[-_]", " ", slug).title().replace(" ", "")
+            entry = {
+                "app": slug,
+                "repo": f"storytold/{slug}",
+                "title": title,
+                "category": "Graphics & Photo",
+                "categoryTag": "CREATIVE STUDIO",
+                "accentColor": "#4f46e5",
+                "tagline": f"{title} Studio App",
+                "desc": f"Open-source {title} creative application.",
+                "visible": True,
+            }
+        entry["icon"] = resolve_app_icon(slug)
+        entry["preview"] = resolve_app_preview(slug)
+        discovered.append(entry)
+
+    try:
+        write_json(DISCOVERED_APPS_FILE, discovered)
+    except Exception:
+        pass
+
+    return discovered
+
+
 def get_manifest() -> Dict[str, Any]:
     """Scan TARGET_DIR and return combined manifest dict, including registered catalog apps."""
     base = Path(TARGET_DIR)
@@ -656,6 +804,7 @@ def get_manifest() -> Dict[str, Any]:
         "system": get_status(),
         "catalog": catalog,
         "auth_required": is_auth_required(),
+        "discovered_apps": get_discovered_apps(),
     }
 
 
@@ -764,6 +913,19 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
         if path == "/api/status":
             body = get_status()
             self._send(200, body)
+            log("GET", self.path, 200)
+            return
+
+        # GET /api/discover or /api/discovered
+        if path in ("/api/discover", "/api/discovered"):
+            refresh = False
+            if "?" in self.path:
+                query = self.path.split("?", 1)[1]
+                refresh = "refresh=true" in query or "refresh=1" in query
+            if refresh:
+                discover_upstream_apps()
+            discovered = get_discovered_apps()
+            self._send(200, {"ok": True, "discovered_apps": discovered, "count": len(discovered)})
             log("GET", self.path, 200)
             return
 
