@@ -230,8 +230,11 @@ get_app_metadata() {
       desc="Open-source boundary representation and parametric solid modeling engine."
       ;;
     *)
-      # Fallback heuristic: title-case slug
-      title=$(echo "${app}" | sed -E 's/[-_]/ /g; s/\b([a-z])/\U\1/g; s/ //g')
+      # Fallback heuristic: clean title without broken sed escapes
+      title=$(echo "${app}" | awk -F'[-_]' '{for(i=1;i<=NF;i++)$i=toupper(substr($i,1,1)) substr($i,2)}1' OFS='' 2>/dev/null || echo "${app}")
+      if [ -z "${title}" ]; then
+        title="${app}"
+      fi
       category="Graphics & Photo"
       categoryTag="CREATIVE STUDIO"
       accentColor="#4f46e5"
@@ -259,45 +262,56 @@ discover_new_apps() {
   local discovered_file="${TARGET_DIR}/.discovered_apps.json"
   echo "Checking for newly published ArtCraft apps..."
 
+  # Locate existing catalog.json
+  local cat_file=""
+  for p in "${CATALOG_FILE:-/config/catalog.json}" "/usr/local/share/artcraft/catalog.json" "./config/catalog.json"; do
+    if [ -f "$p" ]; then
+      cat_file="$p"
+      break
+    fi
+  done
+
   local candidates=()
 
-  # 1. Fetch from https://getartcraft.com/ (authoritative list of ArtCraft apps)
+  # 1. Fetch official ArtCraft app lineup from https://getartcraft.com/
   local site_html
   site_html=$(curl -sfL --retry 2 --max-time 10 "https://getartcraft.com/" 2>/dev/null || echo "")
   if [ -n "${site_html}" ]; then
     local web_apps
-    web_apps=$(echo "${site_html}" | grep -oE '/images/apps/[a-zA-Z0-9_-]+/' | sed -e 's|/images/apps/||' -e 's|/||' | sort -u || true)
+    web_apps=$(echo "${site_html}" | grep -oE '/images/apps/[a-z0-9_-]+/icon\.webp' | sed -E 's|/images/apps/||; s|/icon\.webp||' | sort -u || true)
     while IFS= read -r app || [ -n "$app" ]; do
       [[ -z "$app" ]] && continue
       candidates+=("${app}")
     done <<< "${web_apps}"
   fi
 
-  # 2. Query GitHub public repos under storytold organization
-  local gh_repos
-  gh_repos=$(curl -sfL --retry 2 --max-time 10 "${auth_header[@]}" \
-    -H "Accept: application/vnd.github+json" \
-    -H "X-GitHub-Api-Version: 2022-11-28" \
-    "https://api.github.com/orgs/storytold/repos?type=public&per_page=100" 2>/dev/null || echo "[]")
-  if [ -n "${gh_repos}" ] && [ "${gh_repos}" != "[]" ]; then
-    local repo_apps
-    repo_apps=$(echo "${gh_repos}" | jq -r '.[]? | select(.name | test("craft"; "i")) | .name' 2>/dev/null || true)
-    while IFS= read -r app || [ -n "$app" ]; do
-      [[ -z "$app" ]] && continue
-      candidates+=("${app}")
-    done <<< "${repo_apps}"
+  # 2. If getartcraft.com returned nothing (offline/blocked), fallback to GitHub organization query
+  if [ ${#candidates[@]} -eq 0 ]; then
+    local gh_repos
+    gh_repos=$(curl -sfL --retry 2 --max-time 10 "${auth_header[@]}" \
+      -H "Accept: application/vnd.github+json" \
+      -H "X-GitHub-Api-Version: 2022-11-28" \
+      "https://api.github.com/orgs/storytold/repos?type=public&per_page=100" 2>/dev/null || echo "[]")
+    if [ -n "${gh_repos}" ] && [ "${gh_repos}" != "[]" ]; then
+      local repo_apps
+      repo_apps=$(echo "${gh_repos}" | jq -r '.[]? | select(.name | test("^[a-z]+craft$|^craft-anything$")) | select(.name | test("^(artcraft|crafthub)$") | not) | .name' 2>/dev/null || true)
+      while IFS= read -r app || [ -n "$app" ]; do
+        [[ -z "$app" ]] && continue
+        candidates+=("${app}")
+      done <<< "${repo_apps}"
+    fi
   fi
 
-  # Deduplicate candidate apps and filter out non-app utility repos
+  # Deduplicate candidate apps
   local unique_candidates=()
   if [ ${#candidates[@]} -gt 0 ]; then
-    mapfile -t unique_candidates < <(printf '%s\n' "${candidates[@]}" | tr '[:upper:]' '[:lower:]' | grep -E '^[a-z0-9_-]+$' | grep -vE '^(craft-libs|craft-update|artcraft-hub)$' | sort -u)
+    mapfile -t unique_candidates < <(printf '%s\n' "${candidates[@]}" | tr '[:upper:]' '[:lower:]' | grep -E '^[a-z0-9_-]+$' | sort -u)
   fi
 
   # Read existing catalog keys to exclude already-registered applications
   local existing_keys=()
-  if [ -f "${CATALOG_FILE}" ]; then
-    mapfile -t existing_keys < <(jq -r 'keys[]' "${CATALOG_FILE}" 2>/dev/null || true)
+  if [ -n "${cat_file}" ] && [ -f "${cat_file}" ]; then
+    mapfile -t existing_keys < <(jq -r 'keys[]' "${cat_file}" 2>/dev/null || true)
   fi
 
   local new_discovered=()

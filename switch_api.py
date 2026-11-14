@@ -685,34 +685,35 @@ def discover_upstream_apps() -> List[Dict[str, Any]]:
         )
         with urllib.request.urlopen(req, timeout=8) as resp:
             html = resp.read().decode("utf-8", errors="replace")
-            for match in re.findall(r"/images/apps/([a-zA-Z0-9_\-]+)/", html):
+            for match in re.findall(r"/images/apps/([a-zA-Z0-9_\-]+)/icon\.webp", html):
                 candidate_slugs.add(match.lower())
     except Exception:
         pass
 
-    # 2. Check GitHub organization public repos
-    try:
-        gh_headers = {
-            "User-Agent": "ArtCraftHub/2.0",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        }
-        token = os.environ.get("GITHUB_TOKEN", "").strip()
-        if token:
-            gh_headers["Authorization"] = f"Bearer {token}"
-        req = urllib.request.Request(
-            "https://api.github.com/orgs/storytold/repos?type=public&per_page=100",
-            headers=gh_headers
-        )
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            repos_data = json.loads(resp.read().decode("utf-8"))
-            if isinstance(repos_data, list):
-                for r in repos_data:
-                    name = (r.get("name") or "").lower()
-                    if ("craft" in name or name == "craft-anything") and name not in ("craft-libs", "craft-update", "artcraft-hub"):
-                        candidate_slugs.add(name)
-    except Exception:
-        pass
+    # 2. Check GitHub organization public repos only if getartcraft.com was unreachable
+    if not candidate_slugs:
+        try:
+            gh_headers = {
+                "User-Agent": "ArtCraftHub/2.0",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+            token = os.environ.get("GITHUB_TOKEN", "").strip()
+            if token:
+                gh_headers["Authorization"] = f"Bearer {token}"
+            req = urllib.request.Request(
+                "https://api.github.com/orgs/storytold/repos?type=public&per_page=100",
+                headers=gh_headers
+            )
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                repos_data = json.loads(resp.read().decode("utf-8"))
+                if isinstance(repos_data, list):
+                    for r in repos_data:
+                        name = (r.get("name") or "").lower()
+                        if re.fullmatch(r"[a-z]+craft|craft-anything", name) and name not in ("artcraft", "crafthub"):
+                            candidate_slugs.add(name)
+        except Exception:
+            pass
 
     discovered = []
     for slug in sorted(candidate_slugs):
