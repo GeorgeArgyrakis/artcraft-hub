@@ -188,11 +188,18 @@ def get_status() -> Dict[str, Any]:
 
     discovered = get_discovered_apps()
 
+    rate_limited = bool(status_data.get("rate_limited", False))
+    last_error = str(status_data.get("last_error", "") or "")
+    if not rate_limited and "rate limit" in last_error.lower():
+        rate_limited = True
+
     return {
         "status": "syncing" if is_syncing else status_data.get("status", "idle"),
         "is_syncing": is_syncing,
         "last_sync": status_data.get("last_sync"),
         "last_success": status_data.get("last_success", True),
+        "rate_limited": rate_limited,
+        "last_error": last_error,
         "apps_count": len(apps_list),
         "schedule": os.environ.get("SYNC_CRON", "0 0 * * *"),
         "timezone": os.environ.get("TZ", "UTC"),

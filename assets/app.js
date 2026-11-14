@@ -362,6 +362,12 @@
     const discoveryBannerText = document.getElementById('discovery-banner-text');
     const discoveryBannerActions = document.getElementById('discovery-banner-actions');
 
+    /* Rate Limit Warning Banner */
+    let isRateLimited = false;
+    const rateLimitBanner = document.getElementById('rate-limit-banner');
+    const rateLimitBannerText = document.getElementById('rate-limit-banner-text');
+    const btnRateLimitDismiss = document.getElementById('btn-rate-limit-dismiss');
+
     /* Edit Mode & Modal DOM references */
     let isEditMode = false;
     let appToDelete = null;
@@ -605,6 +611,38 @@
       }
     }
 
+    function updateRateLimitBanner(sys) {
+      if (!rateLimitBanner) return;
+      isRateLimited = Boolean(sys && (sys.rate_limited || (sys.last_error && /rate limit/i.test(sys.last_error))));
+      let dismissed = false;
+      try {
+        dismissed = sessionStorage.getItem('artcraft_dismissed_rate_limit') === 'true';
+      } catch (e) {}
+
+      if (isRateLimited && !dismissed) {
+        if (sys && sys.last_error && rateLimitBannerText) {
+          rateLimitBannerText.innerHTML = `GitHub API rate limit exceeded (60 requests/hour). Applications cannot be downloaded or installed. Configure <code>GITHUB_TOKEN</code> in your <code>docker-compose.yml</code> to increase the limit to 5,000 requests/hour.`;
+        }
+        rateLimitBanner.style.display = 'flex';
+        rateLimitBanner.classList.add('active');
+      } else {
+        rateLimitBanner.style.display = 'none';
+        rateLimitBanner.classList.remove('active');
+      }
+    }
+
+    if (btnRateLimitDismiss) {
+      btnRateLimitDismiss.addEventListener('click', () => {
+        try {
+          sessionStorage.setItem('artcraft_dismissed_rate_limit', 'true');
+        } catch (e) {}
+        if (rateLimitBanner) {
+          rateLimitBanner.style.display = 'none';
+          rateLimitBanner.classList.remove('active');
+        }
+      });
+    }
+
     /* -------------------------------------------------------------
        Global Version Menu Helper
        ------------------------------------------------------------- */
@@ -811,11 +849,11 @@
                   </svg>` : ''}
                 </button>
                 <div class="version-menu" id="menu-${appInfo.app}"></div>` : `
-                <span class="artcraft-pill-stage single-version is-uninstalled" id="chip-${appInfo.app}" title="Not installed yet. Click 'Sync Releases' to download." style="border-color: #64748b; color: #94a3b8;">
-                  <span class="version-tag-text">${isSyncing ? 'SYNCING...' : 'NOT INSTALLED'}</span>
+                <span class="artcraft-pill-stage single-version is-uninstalled" id="chip-${appInfo.app}" title="${isRateLimited ? 'GitHub API rate limit exceeded. Set GITHUB_TOKEN in docker-compose.yml to download.' : 'Not installed yet. Click \'Sync Releases\' to download.'}" style="border-color: ${isRateLimited ? '#ef4444' : '#64748b'}; color: ${isRateLimited ? '#fca5a5' : '#94a3b8'};">
+                  <span class="version-tag-text">${isSyncing ? 'SYNCING...' : (isRateLimited ? 'RATE LIMITED' : 'NOT INSTALLED')}</span>
                 </span>`}
               </div>
-              <span class="artcraft-date-text" id="date-${appInfo.app}">${isInstalled ? `UPDATED ${updatedDate.toUpperCase()}` : 'PENDING SYNC'}</span>
+              <span class="artcraft-date-text" id="date-${appInfo.app}" style="${isRateLimited ? 'color: #ef4444;' : ''}">${isInstalled ? `UPDATED ${updatedDate.toUpperCase()}` : (isRateLimited ? 'RATE LIMITED' : 'PENDING SYNC')}</span>
             </div>
 
             <!-- ArtCraft Bottom Explore / Launch Action Button -->
@@ -824,8 +862,8 @@
               <span>EXPLORE ${escapedTitle.toUpperCase()}</span>
               <span class="artcraft-arrow">↗</span>
             </a>` : `
-            <button type="button" class="artcraft-explore-btn is-disabled" disabled title="Sync releases to install this application">
-              <span>NOT INSTALLED</span>
+            <button type="button" class="artcraft-explore-btn is-disabled" disabled title="${isRateLimited ? 'GitHub rate limit exceeded — set GITHUB_TOKEN to install' : 'Sync releases to install this application'}">
+              <span>${isRateLimited ? 'RATE LIMITED' : 'NOT INSTALLED'}</span>
               <span class="artcraft-arrow">✕</span>
             </button>`}
           </div>
@@ -889,12 +927,12 @@
                     </svg>
                   </button>
                   <div class="version-menu" id="menu-${appInfo.app}"></div>` : `
-                  <span class="artcraft-pill-stage single-version is-uninstalled" id="chip-${appInfo.app}" title="Not installed yet" style="border-color: #64748b; color: #94a3b8;">
-                    <span class="version-tag-text">${isSyncing ? 'SYNCING...' : 'NOT INSTALLED'}</span>
+                  <span class="artcraft-pill-stage single-version is-uninstalled" id="chip-${appInfo.app}" title="${isRateLimited ? 'GitHub API rate limit exceeded. Set GITHUB_TOKEN in docker-compose.yml to download.' : 'Not installed yet'}" style="border-color: ${isRateLimited ? '#ef4444' : '#64748b'}; color: ${isRateLimited ? '#fca5a5' : '#94a3b8'};">
+                    <span class="version-tag-text">${isSyncing ? 'SYNCING...' : (isRateLimited ? 'RATE LIMITED' : 'NOT INSTALLED')}</span>
                   </span>`}
                 </div>
               </div>
-              <span class="updated-date" id="date-${appInfo.app}">Updated ${updatedDate}</span>
+              <span class="updated-date" id="date-${appInfo.app}" style="${isRateLimited ? 'color: #ef4444;' : ''}">${isInstalled ? `Updated ${updatedDate}` : (isRateLimited ? 'Rate Limited' : 'Pending Sync')}</span>
             </div>
             <span class="releases-count-badge">${releases.length} ${releases.length === 1 ? 'version' : 'versions'}</span>
           </div>
@@ -1357,13 +1395,13 @@
         }
         updateAuthUI();
 
-        rawApps = data.apps || [];
-        updateCategoryCounts();
-        renderGrid();
-
         if (data.system) {
           updateSystemStatus(data.system);
         }
+
+        rawApps = data.apps || [];
+        updateCategoryCounts();
+        renderGrid();
 
         if (data.discovered_apps && Array.isArray(data.discovered_apps)) {
           discoveredAppsList = data.discovered_apps;
@@ -1410,6 +1448,7 @@
 
     function updateSystemStatus(sys) {
       if (!sys) return;
+      updateRateLimitBanner(sys);
 
       const active = sys.is_syncing || sys.status === 'syncing';
       isSyncing = active;
@@ -1494,7 +1533,9 @@
             isSyncing = false;
             stopSyncPolling();
             updateSystemStatus(sys);
-            if (sys.last_success === false) {
+            if (sys.rate_limited || (sys.last_error && /rate limit/i.test(sys.last_error))) {
+              showToast('GitHub Rate Limit Exceeded', 'GitHub API rate limit exceeded (60 req/hr). Set GITHUB_TOKEN in docker-compose.yml to install apps.', 'error');
+            } else if (sys.last_success === false) {
               showToast('Sync Notice', 'Sync completed with warnings or errors. Check container logs.', 'error');
             } else {
               showToast('Sync Complete', 'Applications updated successfully.', 'success');

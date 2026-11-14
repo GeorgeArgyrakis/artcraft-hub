@@ -37,11 +37,17 @@ fi
 
 # ── Fetch release metadata ────────────────────────────────────────────────────
 echo "Fetching release metadata from GitHub..."
-RESP=$(curl -sf --retry 3 --retry-delay 5 \
+RESP=$(curl -s --retry 3 --retry-delay 5 \
   "${auth_header[@]}" \
   -H "Accept: application/vnd.github+json" \
   -H "X-GitHub-Api-Version: 2022-11-28" \
-  "https://api.github.com/repos/${REPO}/releases/tags/${TAG}" || echo '{}')
+  "https://api.github.com/repos/${REPO}/releases/tags/${TAG}" 2>/dev/null || echo '{}')
+
+ERR_MSG=$(echo "${RESP}" | jq -r '.message // empty' 2>/dev/null || echo "")
+if [[ "${ERR_MSG}" =~ [Rr]ate\ limit ]]; then
+  echo "[ERROR] GitHub API rate limit exceeded! Set GITHUB_TOKEN to raise your limit to 5,000 req/hr." >&2
+  exit 1
+fi
 
 ACTUAL_TAG=$(echo "${RESP}" | jq -r '.tag_name // empty')
 if [ -z "${ACTUAL_TAG}" ]; then

@@ -156,6 +156,19 @@
       </div>
     </div>
 
+    <!-- GitHub Rate Limit Warning Banner -->
+    <div class="rate-limit-banner" id="rate-limit-banner" style="display: none;" role="alert" aria-label="GitHub API Rate Limit Warning">
+      <div class="rate-limit-banner-content">
+        <span class="rate-limit-badge">RATE LIMIT EXCEEDED</span>
+        <span class="rate-limit-text" id="rate-limit-banner-text">
+          GitHub API rate limit exceeded (60 requests/hour). Applications cannot be downloaded or installed. Configure <code>GITHUB_TOKEN</code> in your <code>docker-compose.yml</code> to increase the limit to 5,000 requests/hour.
+        </span>
+      </div>
+      <div class="rate-limit-banner-actions" id="rate-limit-banner-actions">
+        <button type="button" class="btn-rate-limit-dismiss" id="btn-rate-limit-dismiss" title="Dismiss notice for this session">Dismiss</button>
+      </div>
+    </div>
+
     <!-- Discovery Banner for Newly Published ArtCraft Apps -->
     <div class="discovery-banner" id="discovery-banner" style="display: none;" role="region" aria-label="Newly Published Applications">
       <div class="discovery-banner-content">

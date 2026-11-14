@@ -22,8 +22,22 @@ cleanup_on_exit() {
   if [ "${exit_code}" -ne 0 ]; then
     local ts
     ts=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+    local existing_err=""
+    local existing_rl=false
+    if [ -f "${TARGET_DIR}/.sync_status.json" ]; then
+      existing_err=$(jq -r '.last_error // empty' "${TARGET_DIR}/.sync_status.json" 2>/dev/null || echo "")
+      existing_rl=$(jq -r '.rate_limited // false' "${TARGET_DIR}/.sync_status.json" 2>/dev/null || echo "false")
+    fi
     local tmp_status="${TARGET_DIR}/.sync_status.json.tmp.$$"
-    echo "{\"status\":\"idle\",\"last_sync\":\"${ts}\",\"last_success\":false,\"exit_code\":${exit_code}}" > "${tmp_status}" 2>/dev/null || true
+    jq -n \
+      --arg status "idle" \
+      --arg last_sync "${ts}" \
+      --argjson last_success false \
+      --argjson rate_limited "${existing_rl}" \
+      --arg last_error "${existing_err}" \
+      --argjson exit_code "${exit_code}" \
+      '{status: $status, last_sync: $last_sync, last_success: $last_success, rate_limited: $rate_limited, last_error: $last_error, exit_code: $exit_code}' \
+      > "${tmp_status}" 2>/dev/null || true
     mv -f "${tmp_status}" "${TARGET_DIR}/.sync_status.json" 2>/dev/null || true
   fi
 }
@@ -471,6 +485,9 @@ sync_releases() {
   fi
 
   local any_updated=false
+  local any_error=false
+  local rate_limited=false
+  local last_error=""
 
   for repo_path in "${APPS[@]}"; do
     repo_path="${repo_path// /}"
@@ -491,11 +508,21 @@ sync_releases() {
 
     local api_url="https://api.github.com/repos/${repo_path}/releases/latest"
     local resp
-    resp=$(curl -sf --retry 3 --retry-delay 5 \
+    resp=$(curl -s --retry 3 --retry-delay 5 \
       "${auth_header[@]}" \
       -H "Accept: application/vnd.github+json" \
       -H "X-GitHub-Api-Version: 2022-11-28" \
       "${api_url}" 2>/dev/null || echo '{}')
+
+    local err_msg
+    err_msg=$(echo "${resp}" | jq -r '.message // empty' 2>/dev/null || true)
+    if [[ "${err_msg}" =~ [Rr]ate\ limit ]]; then
+      echo "  [ERROR] GitHub API rate limit exceeded for ${repo_path}! Set GITHUB_TOKEN in docker-compose.yml to increase the limit from 60 to 5,000 req/hr." >&2
+      any_error=true
+      rate_limited=true
+      last_error="GitHub API rate limit exceeded (60 req/hr). Set GITHUB_TOKEN in docker-compose.yml to raise limit to 5,000 req/hr."
+      continue
+    fi
 
     local tag
     tag=$(echo "${resp}" | jq -r '.tag_name // empty')
@@ -577,6 +604,7 @@ sync_releases() {
     else
       echo "  [ERROR] Failed to download ${download_url}"
       rm -rf "${tmp_zip}" "${tmp_extract}" "${tag_dir}"
+      any_error=true
     fi
   done
 
@@ -593,8 +621,20 @@ sync_releases() {
   if [ -f "${TARGET_DIR}/.discovered_apps.json" ]; then
     discovered_count=$(jq '. | length' "${TARGET_DIR}/.discovered_apps.json" 2>/dev/null || echo 0)
   fi
+  local last_success=true
+  if [ "${any_error}" = true ] || [ "${rate_limited}" = true ]; then
+    last_success=false
+  fi
   local tmp_status="${TARGET_DIR}/.sync_status.json.tmp.$$"
-  echo "{\"status\":\"idle\",\"last_sync\":\"${ts}\",\"last_success\":true,\"discovered_count\":${discovered_count}}" > "${tmp_status}" 2>/dev/null || true
+  jq -n \
+    --arg status "idle" \
+    --arg last_sync "${ts}" \
+    --argjson last_success "${last_success}" \
+    --argjson rate_limited "${rate_limited}" \
+    --arg last_error "${last_error}" \
+    --argjson discovered_count "${discovered_count}" \
+    '{status: $status, last_sync: $last_sync, last_success: $last_success, rate_limited: $rate_limited, last_error: $last_error, discovered_count: $discovered_count}' \
+    > "${tmp_status}" 2>/dev/null || true
   mv -f "${tmp_status}" "${TARGET_DIR}/.sync_status.json" 2>/dev/null || true
   rm -f "${SYNC_LOCK}" 2>/dev/null || true
 

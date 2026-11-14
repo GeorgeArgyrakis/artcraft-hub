@@ -609,6 +609,18 @@ class TestAppDiscovery(unittest.TestCase):
         self.assertEqual(len(manifest["discovered_apps"]), 1)
         self.assertEqual(manifest["discovered_apps"][0]["app"], "anicraft")
 
+    def test_status_reports_rate_limited(self):
+        switch_api.write_json(switch_api.STATUS_FILE, {
+            "status": "idle",
+            "last_success": False,
+            "rate_limited": True,
+            "last_error": "GitHub API rate limit exceeded (60 req/hr). Set GITHUB_TOKEN in docker-compose.yml to raise limit to 5,000 req/hr."
+        })
+        status = switch_api.get_status()
+        self.assertTrue(status.get("rate_limited"))
+        self.assertIn("rate limit exceeded", status.get("last_error", ""))
+        self.assertFalse(status.get("last_success"))
+
     def test_add_catalog_app_cleans_discovered(self):
         mock_discovered = [
             {"app": "anicraft", "repo": "storytold/anicraft", "title": "AniCraft"},
