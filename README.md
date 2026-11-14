@@ -405,8 +405,21 @@ Data volumes are not touched. Installed apps and the catalog remain in place.
 | `SharedArrayBuffer is not defined` or app hangs at startup | Page opened over plain HTTP from a non-localhost address | Serve over HTTPS ([see above](#-https--reverse-proxy)) |
 | Same error, already on HTTPS | Reverse proxy strips or overrides COOP/COEP headers | Check response headers in DevTools → Network; remove any header overrides in the proxy |
 | `.wasm` fails to compile / wrong MIME type | A proxy or CDN rewrites `Content-Type` | Ensure `.wasm` is served as `application/wasm` |
-| Apps never appear | GitHub rate limit or no matching `*web*.zip` asset | Set `GITHUB_TOKEN`, check logs, verify the repo's releases |
+| Apps never appear / show "Pending Sync" or "Rate Limited" | GitHub API rate limit reached (60 req/hr) or missing asset | Set `GITHUB_TOKEN`, see [GitHub API Rate Limiting](#github-api-rate-limiting-rate-limit-exceeded) |
 | Preview images missing | External CDN unreachable or blocked by COEP | Add local previews in `/data/previews/` |
+
+### GitHub API Rate Limiting (`RATE LIMIT EXCEEDED`)
+
+The hub automatically polls the GitHub REST API to locate and download WebAssembly release packages (`*web*.zip`) for every configured app.
+
+- **Unauthenticated Limit (60 req/hr)**: By default, GitHub caps unauthenticated API calls at **60 requests per hour** per public IP address. Because the suite tracks 15+ applications, recreating the container or performing a couple of sync checks can exhaust this limit within minutes.
+- **UI Indicators**: When rate-limited, the hub displays a **`RATE LIMIT EXCEEDED`** alert banner across the top of the dashboard, and uninstalled applications show a red `RATE LIMITED` badge instead of downloading.
+- **Resolution**: Provide a GitHub Personal Access Token (classic or fine-grained with public repository read permissions). This raises your quota to **5,000 requests per hour**:
+  ```yaml
+  environment:
+    - GITHUB_TOKEN=ghp_yourTokenHere
+  ```
+  Then restart the container (`docker compose up -d`). Alternatively, wait for GitHub's 60-minute rate limit window to reset.
 
 ### Why COOP / COEP headers?
 
