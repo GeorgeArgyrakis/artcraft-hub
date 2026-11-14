@@ -49,6 +49,7 @@ A self-hosted Docker container that automatically fetches the latest WebAssembly
 ## ✨ Features
 
 - **Automatic release sync** from GitHub Releases on a configurable cron schedule
+- **New app discovery**: automatically detects newly published ArtCraft apps during sync and prompts you to add them in one click
 - **WASM-ready serving** with COOP/COEP headers and the correct `application/wasm` MIME type
 - **Release switching**: keep several versions per app and switch between them instantly
 - **Edit Mode** in the dashboard to add, edit, hide, or delete apps, with GitHub auto-fill
@@ -217,6 +218,14 @@ An app can be added only if its GitHub repository publishes **releases** that in
 - **Asset name:** a `.zip` file whose name contains `web` (case-insensitive), e.g. `photocraft-web.zip`.
 - **Contents:** an `index.html` together with its `.wasm` and `.js` files, either at the root of the archive **or** inside a single top-level folder (which is flattened automatically on extraction).
 
+### Automatic discovery of new ArtCraft apps
+
+During each sync (manual or cron-scheduled), ArtCraft Hub cross-checks [getartcraft.com](https://getartcraft.com) and the `storytold` GitHub organization for newly published ArtCraft apps not yet in your `catalog.json`:
+
+- **Notification & Banner:** when a new app is detected (e.g. `AniCraft`, `MaterialCraft`), an interactive toast notification and top banner appear on the dashboard.
+- **1-Click Addition:** click **+ Add to Suite** to automatically register the app with curated metadata and begin downloading its release immediately.
+- **Admin Authentication:** if `ADMIN_PASSWORD` is configured, clicking add will prompt for the admin password to unlock management first.
+
 ### Option 1: Dashboard (Edit Mode)
 
 Click **Edit Suite** in the top navigation bar (if `ADMIN_PASSWORD` is configured, you will be prompted to enter the password to unlock management):
@@ -291,6 +300,7 @@ The management API (port `5000` inside the container) supports automation:
 | `PATCH` | `/api/catalog/{app}/visibility` | Show/hide. Body: `{ "visible": false }` |
 | `DELETE` | `/api/catalog/{app}` | Delete the catalog entry **and purge all downloaded data** |
 | `POST` | `/api/sync` | Trigger a background release check |
+| `GET` | `/api/discover` | List upstream discovered ArtCraft apps not yet in catalog (use `?refresh=true` for live check) |
 | `POST` | `/api/{app}/switch/{tag}` | Atomically repoint the `current` symlink to another downloaded release |
 
 > When `ADMIN_PASSWORD` is configured, all mutating endpoints (`POST`, `PUT`, `PATCH`, `DELETE`) require the `X-Admin-Password: <password>` header or `Authorization: Bearer <password>`. See [Security](#-security).
