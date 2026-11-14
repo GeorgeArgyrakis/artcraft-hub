@@ -40,6 +40,29 @@ class TestSemverSorting(unittest.TestCase):
         tags = [r["tag"] for r in sorted_rels]
         self.assertEqual(tags, ["2.0.0", "1.10.0", "1.2.3"])
 
+    def test_prerelease_sorting(self):
+        releases = [
+            {"tag": "v1.0.0-alpha"},
+            {"tag": "v1.0.0"},
+            {"tag": "v1.0.0-rc1"},
+            {"tag": "v1.0.0-beta.2"},
+            {"tag": "v1.0.0-beta.1"},
+            {"tag": "v0.9.9"},
+        ]
+        sorted_rels = switch_api.sorted_releases_newest_first(releases)
+        tags = [r["tag"] for r in sorted_rels]
+        self.assertEqual(
+            tags,
+            [
+                "v1.0.0",
+                "v1.0.0-rc1",
+                "v1.0.0-beta.2",
+                "v1.0.0-beta.1",
+                "v1.0.0-alpha",
+                "v0.9.9",
+            ],
+        )
+
     def test_empty_and_single(self):
         self.assertEqual(switch_api.sorted_releases_newest_first([]), [])
         self.assertEqual(
@@ -581,6 +604,114 @@ class TestAppDiscovery(unittest.TestCase):
         # Also check file content directly
         on_disk = switch_api.read_json(switch_api.DISCOVERED_APPS_FILE)
         self.assertEqual([a["app"] for a in on_disk], ["materialcraft"])
+
+
+class TestSecurityAndConcurrency(unittest.TestCase):
+    """Test proxy spoofing defense, bounded memory, and catalog management edge cases."""
+
+    def test_client_ip_trusted_vs_untrusted_proxy(self):
+        class MockHandler:
+            def __init__(self, client_ip: str, forwarded_for: str = ""):
+                self.client_address = (client_ip, 12345)
+                self.headers = {"X-Forwarded-For": forwarded_for} if forwarded_for else {}
+
+        # Untrusted direct peer connecting with spoofed header
+        untrusted = MockHandler("203.0.113.5", "198.51.100.1")
+        self.assertEqual(switch_api.get_client_ip(untrusted), "203.0.113.5")
+
+        # Trusted localhost peer connecting with X-Forwarded-For
+        trusted = MockHandler("127.0.0.1", "198.51.100.1, 10.0.0.1")
+        self.assertEqual(switch_api.get_client_ip(trusted), "198.51.100.1")
+
+    def test_rate_limiter_bounded_memory(self):
+        limiter = switch_api.AuthRateLimiter(max_attempts=3, window_seconds=60, max_tracked_ips=10)
+        for i in range(25):
+            limiter.record_failure(f"192.168.1.{i}")
+        self.assertLessEqual(len(limiter._failures), 10)
+
+    def test_session_manager_bounded_memory(self):
+        mgr = switch_api.SessionManager(ttl=3600, max_sessions=5)
+        tokens = []
+        for _ in range(10):
+            tokens.append(mgr.create_session())
+        self.assertLessEqual(len(mgr._sessions), 5)
+        # Most recent session must be valid
+        self.assertTrue(mgr.is_valid(tokens[-1]))
+        # First session should have been evicted
+        self.assertFalse(mgr.is_valid(tokens[0]))
+
+    def test_num_allocation_avoids_duplicate_after_deletion(self):
+        test_dir = tempfile.mkdtemp(prefix="artcraft_num_test_")
+        orig_target = switch_api.TARGET_DIR
+        orig_cat = switch_api.CATALOG_FILE
+        orig_local = switch_api.LOCAL_CATALOG_FILE
+        try:
+            switch_api.TARGET_DIR = test_dir
+            cat_file = Path(test_dir) / "catalog.json"
+            switch_api.CATALOG_FILE = cat_file
+            switch_api.LOCAL_CATALOG_FILE = cat_file
+
+            # Seed catalog with 3 apps: 01, 02, 03
+            catalog = {
+                "app1": {"repo": "storytold/app1", "num": "01"},
+                "app2": {"repo": "storytold/app2", "num": "02"},
+                "app3": {"repo": "storytold/app3", "num": "03"},
+            }
+            switch_api.write_json(cat_file, catalog)
+
+            # Delete app2 (leaving 01 and 03; len == 2)
+            switch_api.delete_catalog_app("app2")
+
+            # Add app4; num must be 04, not 03!
+            resp, code = switch_api.add_or_update_catalog_app("app4", {"repo": "storytold/app4"})
+            self.assertEqual(code, 200)
+            self.assertEqual(resp["entry"]["num"], "04")
+        finally:
+            switch_api.TARGET_DIR = orig_target
+            switch_api.CATALOG_FILE = orig_cat
+            switch_api.LOCAL_CATALOG_FILE = orig_local
+            shutil.rmtree(test_dir, ignore_errors=True)
+
+    def test_delete_catalog_app_purges_webp_assets(self):
+        test_dir = tempfile.mkdtemp(prefix="artcraft_purge_test_")
+        orig_target = switch_api.TARGET_DIR
+        orig_cat = switch_api.CATALOG_FILE
+        orig_local = switch_api.LOCAL_CATALOG_FILE
+        try:
+            switch_api.TARGET_DIR = test_dir
+            cat_file = Path(test_dir) / "catalog.json"
+            switch_api.CATALOG_FILE = cat_file
+            switch_api.LOCAL_CATALOG_FILE = cat_file
+
+            switch_api.write_json(cat_file, {"app1": {"repo": "storytold/app1"}})
+            icons_dir = Path(test_dir) / "icons"
+            previews_dir = Path(test_dir) / "previews"
+            icons_dir.mkdir(parents=True, exist_ok=True)
+            previews_dir.mkdir(parents=True, exist_ok=True)
+
+            svg_icon = icons_dir / "app1.svg"
+            webp_icon = icons_dir / "app1.webp"
+            webp_preview = previews_dir / "app1.webp"
+
+            svg_icon.write_text("<svg></svg>", encoding="utf-8")
+            webp_icon.write_bytes(b"RIFFWEBP")
+            webp_preview.write_bytes(b"RIFFWEBP")
+
+            self.assertTrue(svg_icon.is_file())
+            self.assertTrue(webp_icon.is_file())
+            self.assertTrue(webp_preview.is_file())
+
+            resp, code = switch_api.delete_catalog_app("app1")
+            self.assertEqual(code, 200)
+
+            self.assertFalse(svg_icon.exists())
+            self.assertFalse(webp_icon.exists())
+            self.assertFalse(webp_preview.exists())
+        finally:
+            switch_api.TARGET_DIR = orig_target
+            switch_api.CATALOG_FILE = orig_cat
+            switch_api.LOCAL_CATALOG_FILE = orig_local
+            shutil.rmtree(test_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

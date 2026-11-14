@@ -24,6 +24,7 @@ import os
 import re
 import secrets
 import shutil
+import signal
 import sys
 import tempfile
 import threading
@@ -106,18 +107,54 @@ def write_json_atomic_text(filepath: Path, text: str) -> None:
 
 
 def sorted_releases_newest_first(releases: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Sort release dicts newest-first using semver-aware tuple comparison."""
-    def _key(r: Dict[str, Any]) -> List[Tuple[int, Union[int, str]]]:
-        tag = r.get("tag", "")
+    """
+    Sort release dicts newest-first using semver-aware tuple comparison.
+    Ensures final releases sort higher than pre-releases (e.g. 1.0.0 > 1.0.0-rc1 > 1.0.0-alpha).
+    """
+    def _key(r: Dict[str, Any]) -> Tuple[Any, ...]:
+        tag = (r.get("tag") or "").strip()
         cleaned = re.sub(r"^v", "", tag, flags=re.IGNORECASE)
-        parts = re.split(r"[.\-]", cleaned)
-        numeric: List[Tuple[int, Union[int, str]]] = []
-        for p in parts:
-            try:
-                numeric.append((0, int(p)))
-            except ValueError:
-                numeric.append((1, p))
-        return numeric
+        # Split off build metadata (+)
+        version_part = cleaned.split("+", 1)[0]
+
+        # Separate core version from pre-release (-alpha, -rc1, etc.)
+        if "-" in version_part:
+            core_part, prerelease_part = version_part.split("-", 1)
+            is_final = 0  # Pre-releases sort lower than final releases
+        else:
+            core_part = version_part
+            prerelease_part = ""
+            is_final = 1  # Final releases sort higher
+
+        # Parse numeric core components (e.g. 1.0.0)
+        core_tokens: List[int] = []
+        is_numeric_core = True
+        for part in core_part.split("."):
+            if part.isdigit():
+                core_tokens.append(int(part))
+            else:
+                is_numeric_core = False
+                break
+
+        if is_numeric_core and len(core_tokens) > 0:
+            while len(core_tokens) < 3:
+                core_tokens.append(0)
+            core_tuple = tuple(core_tokens[:3])
+            priority = 1
+        else:
+            core_tuple = (-1,)
+            priority = 0
+
+        # Parse pre-release tokens
+        prerelease_tokens: List[Tuple[int, Union[int, str]]] = []
+        if prerelease_part:
+            for p in re.split(r"[.\-]", prerelease_part):
+                if p.isdigit():
+                    prerelease_tokens.append((0, int(p)))
+                else:
+                    prerelease_tokens.append((1, p))
+
+        return (priority, core_tuple, is_final, prerelease_tokens)
 
     return sorted(releases, key=_key, reverse=True)
 
@@ -167,6 +204,19 @@ def get_status() -> Dict[str, Any]:
 SESSION_COOKIE_NAME: str = "artcraft_session"
 SESSION_DURATION_SECONDS: int = 86400  # 24 hours
 MAX_BODY_SIZE: int = 64 * 1024         # 64 KB payload cap to prevent OOM/DoS
+MAX_SESSIONS: int = 1000               # Bounded memory for active sessions
+MAX_TRACKED_IPS: int = 5000            # Bounded memory for rate-limiting failure tracking
+DISCOVER_REFRESH_COOLDOWN_SECONDS: int = 300  # 5-minute cooldown for unauthenticated refresh
+CATALOG_LOCK = threading.Lock()
+_discover_refresh_lock = threading.Lock()
+_last_discover_refresh_time: float = 0.0
+
+_trusted_env = os.environ.get("TRUSTED_PROXIES", "").strip()
+TRUSTED_PROXIES = (
+    set(p.strip() for p in _trusted_env.split(",") if p.strip())
+    if _trusted_env
+    else {"127.0.0.1", "::1", "localhost"}
+)
 
 
 def get_admin_password() -> str:
@@ -189,10 +239,11 @@ def verify_password(expected: str, provided: str) -> bool:
 
 
 class SessionManager:
-    """Thread-safe in-memory session token manager."""
+    """Thread-safe in-memory session token manager with bounded capacity."""
 
-    def __init__(self, ttl: int = SESSION_DURATION_SECONDS):
+    def __init__(self, ttl: int = SESSION_DURATION_SECONDS, max_sessions: int = MAX_SESSIONS):
         self.ttl = ttl
+        self.max_sessions = max_sessions
         self._sessions: Dict[str, float] = {}
         self._lock = threading.Lock()
 
@@ -201,6 +252,10 @@ class SessionManager:
         expires_at = time.time() + self.ttl
         with self._lock:
             self._purge_expired_locked()
+            while len(self._sessions) >= self.max_sessions:
+                # Evict oldest expiring token
+                oldest_token = min(self._sessions, key=lambda k: self._sessions[k])
+                del self._sessions[oldest_token]
             self._sessions[token] = expires_at
         return token
 
@@ -235,12 +290,19 @@ session_manager = SessionManager()
 
 
 class AuthRateLimiter:
-    """Non-blocking IP-based failure tracker preventing brute-force password guessing."""
+    """Non-blocking IP-based failure tracker preventing brute-force password guessing with bounded capacity."""
 
-    def __init__(self, max_attempts: int = 5, window_seconds: int = 60, lockout_seconds: int = 60):
+    def __init__(
+        self,
+        max_attempts: int = 5,
+        window_seconds: int = 60,
+        lockout_seconds: int = 60,
+        max_tracked_ips: int = MAX_TRACKED_IPS,
+    ):
         self.max_attempts = max_attempts
         self.window_seconds = window_seconds
         self.lockout_seconds = lockout_seconds
+        self.max_tracked_ips = max_tracked_ips
         self._failures: Dict[str, List[float]] = {}
         self._locked_until: Dict[str, float] = {}
         self._lock = threading.Lock()
@@ -260,6 +322,7 @@ class AuthRateLimiter:
         """Record a failed authentication attempt. Returns (is_locked_now, retry_after)."""
         now = time.time()
         with self._lock:
+            self._purge_overflow_locked(now)
             cutoff = now - self.window_seconds
             attempts = [ts for ts in self._failures.get(ip, []) if ts > cutoff]
             attempts.append(now)
@@ -278,6 +341,25 @@ class AuthRateLimiter:
             self._failures.pop(ip, None)
             self._locked_until.pop(ip, None)
 
+    def _purge_overflow_locked(self, now: float) -> None:
+        """Evict expired or oldest entries if capacity is exceeded."""
+        if len(self._failures) >= self.max_tracked_ips:
+            cutoff = now - self.window_seconds
+            expired = [k for k, v in self._failures.items() if not v or max(v) <= cutoff]
+            for k in expired:
+                del self._failures[k]
+            while len(self._failures) >= self.max_tracked_ips:
+                first_key = next(iter(self._failures))
+                del self._failures[first_key]
+
+        if len(self._locked_until) >= self.max_tracked_ips:
+            expired_locks = [k for k, exp in self._locked_until.items() if now >= exp]
+            for k in expired_locks:
+                del self._locked_until[k]
+            while len(self._locked_until) >= self.max_tracked_ips:
+                first_key = next(iter(self._locked_until))
+                del self._locked_until[first_key]
+
     def clear(self) -> None:
         with self._lock:
             self._failures.clear()
@@ -288,15 +370,21 @@ rate_limiter = AuthRateLimiter()
 
 
 def get_client_ip(handler: BaseHTTPRequestHandler) -> str:
-    """Extract client IP, taking X-Forwarded-For into account if behind reverse proxy."""
-    if hasattr(handler, "headers") and handler.headers:
+    """
+    Extract client IP safely.
+    Only trusts X-Forwarded-For if direct peer address is in TRUSTED_PROXIES.
+    """
+    peer_ip = "127.0.0.1"
+    client = getattr(handler, "client_address", None)
+    if client and isinstance(client, (tuple, list)) and len(client) > 0:
+        peer_ip = str(client[0])
+
+    if peer_ip in TRUSTED_PROXIES and hasattr(handler, "headers") and handler.headers:
         xfwd = handler.headers.get("X-Forwarded-For")
         if xfwd:
             return xfwd.split(",")[0].strip()
-    client = getattr(handler, "client_address", None)
-    if client and isinstance(client, tuple) and len(client) > 0:
-        return str(client[0])
-    return "127.0.0.1"
+
+    return peer_ip
 
 
 def get_cookie_value(headers: Any, cookie_name: str) -> Optional[str]:
@@ -392,48 +480,20 @@ def check_admin_auth(handler: BaseHTTPRequestHandler) -> Tuple[bool, Optional[Tu
             rate_limiter.record_success(client_ip)
             return True, None
 
-    # Record failure if credentials were provided
-    if provided_pw or auth_hdr or session_token:
-        locked, retry_after = rate_limiter.record_failure(client_ip)
-        if locked:
-            return False, (429, {
-                "ok": False,
-                "error": "Too many failed authentication attempts. Please try again later.",
-                "retry_after": retry_after
-            }, {"Retry-After": str(retry_after)})
+    # Record failure on unauthorized access attempt
+    locked, retry_after = rate_limiter.record_failure(client_ip)
+    if locked:
+        return False, (429, {
+            "ok": False,
+            "error": "Too many failed authentication attempts. Please try again later.",
+            "retry_after": retry_after
+        }, {"Retry-After": str(retry_after)})
 
     return False, (401, {"ok": False, "error": "Unauthorized: Invalid or missing admin credentials"}, {})
 
 
-def verify_admin_request(headers: Any) -> bool:
-    """Verify request headers or cookies against ADMIN_PASSWORD or active session."""
-    if not is_auth_required():
-        return True
-
-    expected = get_admin_password()
-    session_token = get_cookie_value(headers, SESSION_COOKIE_NAME)
-    if session_token and session_manager.is_valid(session_token):
-        return True
-
-    provided = ""
-    if hasattr(headers, "get"):
-        provided = headers.get("X-Admin-Password", "") or ""
-        if not provided:
-            auth_hdr = headers.get("Authorization", "") or ""
-            if auth_hdr.startswith("Bearer "):
-                provided = auth_hdr[7:].strip()
-
-    if provided:
-        if session_manager.is_valid(provided):
-            return True
-        if verify_password(expected, provided):
-            return True
-
-    return False
-
-
 def trigger_sync() -> Tuple[Dict[str, Any], int]:
-    """Trigger background sync.sh execution."""
+    """Trigger background sync.sh execution and reap child process to prevent zombie processes."""
     if SYNC_LOCK_FILE.exists():
         try:
             pid = int(SYNC_LOCK_FILE.read_text().strip())
@@ -450,9 +510,19 @@ def trigger_sync() -> Tuple[Dict[str, Any], int]:
         proc = subprocess.Popen(
             [str(SYNC_SCRIPT_PATH)],
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
         )
         SYNC_LOCK_FILE.write_text(str(proc.pid))
+
+        def _reap(p: subprocess.Popen) -> None:
+            try:
+                p.wait()
+            except Exception:
+                pass
+
+        threading.Thread(target=_reap, args=(proc,), daemon=True).start()
+
         return {"ok": True, "message": "Sync started in background", "pid": proc.pid}, 200
     except Exception as exc:
         return {"ok": False, "error": f"Failed to execute sync script: {exc}"}, 500
@@ -490,7 +560,7 @@ def save_catalog(catalog: Dict[str, Any]) -> bool:
 
 
 def add_or_update_catalog_app(app_key: str, meta: Dict[str, Any]) -> Tuple[Dict[str, Any], int]:
-    """Add or update an application record in catalog.json."""
+    """Add or update an application record in catalog.json with concurrency protection."""
     if not APP_NAME_RE.fullmatch(app_key):
         return {"ok": False, "error": f"Invalid app name '{app_key}'"}, 400
 
@@ -508,25 +578,35 @@ def add_or_update_catalog_app(app_key: str, meta: Dict[str, Any]) -> Tuple[Dict[
     desc = (meta.get("desc") or f"Open-source {title} creative application.").strip()
     visible = bool(meta.get("visible", True))
 
-    catalog = get_catalog()
-    existing = catalog.get(app_key, {})
-    num = str(meta.get("num") or existing.get("num") or f"{len(catalog) + 1:02d}")
+    with CATALOG_LOCK:
+        catalog = get_catalog()
+        existing = catalog.get(app_key, {})
+        if meta.get("num"):
+            num = str(meta["num"])
+        elif existing.get("num"):
+            num = str(existing["num"])
+        else:
+            max_num = max(
+                (int(v.get("num", 0)) for v in catalog.values() if isinstance(v, dict) and str(v.get("num", "")).isdigit()),
+                default=0,
+            )
+            num = f"{max_num + 1:02d}"
 
-    entry = {
-        "repo": repo,
-        "num": num,
-        "title": title,
-        "category": category,
-        "categoryTag": category_tag,
-        "accentColor": accent_color,
-        "tagline": tagline,
-        "desc": desc,
-        "visible": visible,
-    }
+        entry = {
+            "repo": repo,
+            "num": num,
+            "title": title,
+            "category": category,
+            "categoryTag": category_tag,
+            "accentColor": accent_color,
+            "tagline": tagline,
+            "desc": desc,
+            "visible": visible,
+        }
 
-    catalog[app_key] = entry
-    if not save_catalog(catalog):
-        return {"ok": False, "error": "Failed to save catalog.json"}, 500
+        catalog[app_key] = entry
+        if not save_catalog(catalog):
+            return {"ok": False, "error": "Failed to save catalog.json"}, 500
 
     # Clean up from discovered apps if present
     if DISCOVERED_APPS_FILE.is_file():
@@ -543,44 +623,54 @@ def add_or_update_catalog_app(app_key: str, meta: Dict[str, Any]) -> Tuple[Dict[
 
 
 def set_app_visibility(app_key: str, visible: bool) -> Tuple[Dict[str, Any], int]:
-    """Update visibility flag for an application in catalog.json."""
+    """Update visibility flag for an application in catalog.json with concurrency protection."""
     if not APP_NAME_RE.fullmatch(app_key):
         return {"ok": False, "error": f"Invalid app name '{app_key}'"}, 400
 
-    catalog = get_catalog()
-    if app_key not in catalog:
-        return {"ok": False, "error": f"App '{app_key}' not found in catalog"}, 404
+    with CATALOG_LOCK:
+        catalog = get_catalog()
+        if app_key not in catalog:
+            return {"ok": False, "error": f"App '{app_key}' not found in catalog"}, 404
 
-    catalog[app_key]["visible"] = bool(visible)
-    if not save_catalog(catalog):
-        return {"ok": False, "error": "Failed to save catalog.json"}, 500
+        catalog[app_key]["visible"] = bool(visible)
+        if not save_catalog(catalog):
+            return {"ok": False, "error": "Failed to save catalog.json"}, 500
 
-    return {"ok": True, "app": app_key, "visible": catalog[app_key]["visible"]}, 200
+        result_visible = catalog[app_key]["visible"]
+
+    return {"ok": True, "app": app_key, "visible": result_visible}, 200
 
 
 def delete_catalog_app(app_key: str) -> Tuple[Dict[str, Any], int]:
-    """Delete an app from catalog.json and purge its files from disk."""
+    """Delete an app from catalog.json and purge its files and graphics from disk."""
     if not APP_NAME_RE.fullmatch(app_key):
         return {"ok": False, "error": f"Invalid app name '{app_key}'"}, 400
 
-    catalog = get_catalog()
-    if app_key in catalog:
-        del catalog[app_key]
-        if not save_catalog(catalog):
-            return {"ok": False, "error": "Failed to save catalog.json"}, 500
+    with CATALOG_LOCK:
+        catalog = get_catalog()
+        if app_key in catalog:
+            del catalog[app_key]
+            if not save_catalog(catalog):
+                return {"ok": False, "error": "Failed to save catalog.json"}, 500
 
     # Purge application directory in TARGET_DIR (/data/{app})
     app_dir = Path(TARGET_DIR) / app_key
     if app_dir.is_dir():
         shutil.rmtree(app_dir, ignore_errors=True)
 
-    # Purge downloaded vector master icon if present (/data/icons/{app}.svg)
-    icon_svg = Path(TARGET_DIR) / "icons" / f"{app_key}.svg"
-    if icon_svg.is_file():
-        try:
-            icon_svg.unlink()
-        except OSError:
-            pass
+    # Purge downloaded vector master icon (.svg) or raster icons/previews (.webp)
+    target_path = Path(TARGET_DIR)
+    for rel_path in (
+        f"icons/{app_key}.svg",
+        f"icons/{app_key}.webp",
+        f"previews/{app_key}.webp",
+    ):
+        asset = target_path / rel_path
+        if asset.is_file() or asset.is_symlink():
+            try:
+                asset.unlink()
+            except OSError:
+                pass
 
     return {"ok": True, "app": app_key, "deleted": True}, 200
 
@@ -837,9 +927,9 @@ def switch_version(app: str, tag: str) -> Tuple[Dict[str, Any], int]:
     if not tag_dir.is_dir():
         return {"ok": False, "error": f"release {tag!r} not found"}, 404
 
-    # Atomic symlink update
+    # Atomic symlink update with per-thread collision avoidance
     current_link = app_dir / "current"
-    tmp_link = app_dir / f"current.tmp.{os.getpid()}"
+    tmp_link = app_dir / f"current.tmp.{os.getpid()}.{threading.get_ident()}.{secrets.token_hex(4)}"
 
     try:
         if tmp_link.exists() or tmp_link.is_symlink():
@@ -848,6 +938,11 @@ def switch_version(app: str, tag: str) -> Tuple[Dict[str, Any], int]:
         os.symlink(f"releases/{tag}", tmp_link)
         os.replace(tmp_link, current_link)
     except OSError as exc:
+        try:
+            if tmp_link.exists() or tmp_link.is_symlink():
+                tmp_link.unlink()
+        except OSError:
+            pass
         return {"ok": False, "error": f"symlink update failed: {exc}"}, 500
 
     # Update active.txt
@@ -896,6 +991,29 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
     # Routing
     # ------------------------------------------------------------------
 
+    def _read_json_dict(self) -> Optional[Dict[str, Any]]:
+        """Safely read request body and parse as JSON dictionary. Sends error response if invalid."""
+        payload, err = read_request_body(self)
+        if err:
+            status, body = err
+            self._send(status, body)
+            log(self.command, self.path, status)
+            return None
+
+        try:
+            data = json.loads(payload.decode("utf-8")) if payload else {}
+        except Exception as e:
+            self._send(400, {"ok": False, "error": f"Invalid JSON payload: {e}"})
+            log(self.command, self.path, 400)
+            return None
+
+        if not isinstance(data, dict):
+            self._send(400, {"ok": False, "error": "JSON payload must be an object"})
+            log(self.command, self.path, 400)
+            return None
+
+        return data
+
     def do_OPTIONS(self) -> None:
         self._send(200, None)
         log("OPTIONS", self.path, 200)
@@ -924,7 +1042,16 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
                 query = self.path.split("?", 1)[1]
                 refresh = "refresh=true" in query or "refresh=1" in query
             if refresh:
-                discover_upstream_apps()
+                now = time.time()
+                is_admin, _ = check_admin_auth(self)
+                should_refresh = False
+                with _discover_refresh_lock:
+                    global _last_discover_refresh_time
+                    if is_admin or (now - _last_discover_refresh_time >= DISCOVER_REFRESH_COOLDOWN_SECONDS):
+                        _last_discover_refresh_time = now
+                        should_refresh = True
+                if should_refresh:
+                    discover_upstream_apps()
             discovered = get_discovered_apps()
             self._send(200, {"ok": True, "discovered_apps": discovered, "count": len(discovered)})
             log("GET", self.path, 200)
@@ -1022,16 +1149,15 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
                 log("POST", self.path, 200)
                 return
 
-            if provided_pw:
-                locked, retry_after = rate_limiter.record_failure(client_ip)
-                if locked:
-                    self._send(429, {
-                        "ok": False,
-                        "error": "Too many failed authentication attempts. Please try again later.",
-                        "retry_after": retry_after
-                    }, {"Retry-After": str(retry_after)})
-                    log("POST", self.path, 429)
-                    return
+            locked, retry_after = rate_limiter.record_failure(client_ip)
+            if locked:
+                self._send(429, {
+                    "ok": False,
+                    "error": "Too many failed authentication attempts. Please try again later.",
+                    "retry_after": retry_after
+                }, {"Retry-After": str(retry_after)})
+                log("POST", self.path, 429)
+                return
 
             self._send(401, {"ok": False, "error": "Unauthorized: Invalid admin password"})
             log("POST", self.path, 401)
@@ -1068,23 +1194,8 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
 
         # POST /api/catalog
         if path == "/api/catalog":
-            payload, err = read_request_body(self)
-            if err:
-                status, body = err
-                self._send(status, body)
-                log("POST", self.path, status)
-                return
-
-            try:
-                data = json.loads(payload.decode("utf-8")) if payload else {}
-            except Exception as e:
-                self._send(400, {"ok": False, "error": f"Invalid JSON payload: {e}"})
-                log("POST", self.path, 400)
-                return
-
-            if not isinstance(data, dict):
-                self._send(400, {"ok": False, "error": "JSON payload must be an object"})
-                log("POST", self.path, 400)
+            data = self._read_json_dict()
+            if data is None:
                 return
 
             app_key = (data.get("app") or "").strip().lower()
@@ -1124,23 +1235,8 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
         m = re.fullmatch(r"/api/catalog/([A-Za-z0-9_\-]+)", path)
         if m:
             app_key = m.group(1)
-            payload, err = read_request_body(self)
-            if err:
-                status, body = err
-                self._send(status, body)
-                log("PUT", self.path, status)
-                return
-
-            try:
-                data = json.loads(payload.decode("utf-8")) if payload else {}
-            except Exception as e:
-                self._send(400, {"ok": False, "error": f"Invalid JSON payload: {e}"})
-                log("PUT", self.path, 400)
-                return
-
-            if not isinstance(data, dict):
-                self._send(400, {"ok": False, "error": "JSON payload must be an object"})
-                log("PUT", self.path, 400)
+            data = self._read_json_dict()
+            if data is None:
                 return
 
             body, status = add_or_update_catalog_app(app_key, data)
@@ -1167,21 +1263,11 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
         m = re.fullmatch(r"/api/catalog/([A-Za-z0-9_\-]+)/visibility", path)
         if m:
             app_key = m.group(1)
-            payload, err = read_request_body(self)
-            if err:
-                status, body = err
-                self._send(status, body)
-                log("PATCH", self.path, status)
+            data = self._read_json_dict()
+            if data is None:
                 return
 
-            try:
-                data = json.loads(payload.decode("utf-8")) if payload else {}
-            except Exception as e:
-                self._send(400, {"ok": False, "error": f"Invalid JSON payload: {e}"})
-                log("PATCH", self.path, 400)
-                return
-
-            visible = data.get("visible", True) if isinstance(data, dict) else True
+            visible = data.get("visible", True)
             body, status = set_app_visibility(app_key, visible)
             self._send(status, body)
             log("PATCH", self.path, status)
@@ -1237,7 +1323,19 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    host, port = "127.0.0.1", 5000
+    # Auto-reap child processes on POSIX systems if supported
+    if hasattr(signal, "SIGCHLD") and hasattr(signal, "SIG_IGN"):
+        try:
+            signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+        except (ValueError, OSError):
+            pass
+
+    host = os.environ.get("API_HOST", "127.0.0.1").strip()
+    try:
+        port = int(os.environ.get("API_PORT", "5000").strip())
+    except ValueError:
+        port = 5000
+
     server = ThreadingHTTPServer((host, port), SwitchAPIHandler)
     server.daemon_threads = True
     print(f"[{utcnow()}] ArtCraft Switch API v2.0 listening on {host}:{port}  (TARGET_DIR={TARGET_DIR})", flush=True)
