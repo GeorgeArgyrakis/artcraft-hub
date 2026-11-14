@@ -221,6 +221,30 @@ sync_app_icon() {
 }
 
 # ---------------------------------------------------------------------------
+# Fetch and cache raster preview graphic to /data/previews/${app}.webp
+# ---------------------------------------------------------------------------
+sync_app_preview() {
+  local app="$1"
+  local preview_file="${TARGET_DIR}/previews/${app}.webp"
+  mkdir -p "${TARGET_DIR}/previews"
+
+  if [ -f "${preview_file}" ]; then
+    return 0
+  fi
+
+  local hero_name="hero"
+  [ "${app}" = "filmcraft" ] && hero_name="color"
+  local preview_url="https://getartcraft.com/images/apps/${app}/${hero_name}.webp"
+
+  if curl -sfL --retry 2 --max-time 8 "${preview_url}" -o "${preview_file}.tmp.$$" 2>/dev/null; then
+    mv -f "${preview_file}.tmp.$$" "${preview_file}"
+    echo "  [PREVIEW] Cached offline preview for ${app}"
+  else
+    rm -f "${preview_file}.tmp.$$" 2>/dev/null || true
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # Curated metadata lookup for discovered ArtCraft apps
 # ---------------------------------------------------------------------------
 get_app_metadata() {
@@ -395,15 +419,40 @@ build_dashboard() {
 # Main sync
 # ---------------------------------------------------------------------------
 sync_releases() {
+  local target_app="${1:-}"
   local status_file="${TARGET_DIR}/.sync_status.json"
   echo "{\"status\":\"syncing\",\"started_at\":\"$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"}" > "${status_file}" 2>/dev/null || true
 
-  echo "[$(date -u +'%Y-%m-%d %H:%M:%SZ')] Starting ArtCraft release sync..."
+  # Clean up stale temporary archive directories from aborted runs
+  rm -rf /tmp/*_extract /tmp/*.zip 2>/dev/null || true
 
   local APPS=()
-  if ! mapfile -t APPS < <(read_apps 2>/dev/null); then
-    build_dashboard
-    return 0
+  if [ -n "${target_app}" ]; then
+    target_app=$(basename "${target_app}" | tr '[:upper:]' '[:lower:]')
+    local repo_found=""
+    while IFS= read -r r || [ -n "$r" ]; do
+      [[ -z "$r" ]] && continue
+      local r_base
+      r_base=$(basename "$r" | tr '[:upper:]' '[:lower:]')
+      if [ "${r_base}" = "${target_app}" ]; then
+        repo_found="$r"
+        break
+      fi
+    done < <(read_apps 2>/dev/null || true)
+
+    if [ -n "${repo_found}" ]; then
+      APPS+=("${repo_found}")
+      echo "[$(date -u +'%Y-%m-%d %H:%M:%SZ')] Targeted single-app sync: '${target_app}' (${repo_found})"
+    else
+      APPS+=("storytold/${target_app}")
+      echo "[$(date -u +'%Y-%m-%d %H:%M:%SZ')] Targeted single-app sync using repo 'storytold/${target_app}'"
+    fi
+  else
+    echo "[$(date -u +'%Y-%m-%d %H:%M:%SZ')] Starting ArtCraft release sync..."
+    if ! mapfile -t APPS < <(read_apps 2>/dev/null); then
+      build_dashboard
+      return 0
+    fi
   fi
 
   if [ ${#APPS[@]} -eq 0 ]; then
@@ -429,8 +478,9 @@ sync_releases() {
 
     echo "  Checking ${repo_path}..."
 
-    # Fetch official vector master icon from repository assets/app-icon/<app>.svg
+    # Fetch official vector master icon and offline preview graphic
     sync_app_icon "${repo_path}" "${reponame}"
+    sync_app_preview "${reponame}"
 
     # Run migration from old layout if needed
     migrate_if_needed "${reponame}"
@@ -525,8 +575,10 @@ sync_releases() {
     fi
   done
 
-  # Check for newly published ArtCraft apps upstream
-  discover_new_apps
+  # Check for newly published ArtCraft apps upstream (only on full suite sync)
+  if [ -z "${target_app}" ]; then
+    discover_new_apps
+  fi
 
   build_dashboard
 
@@ -544,4 +596,4 @@ sync_releases() {
   echo "[$(date -u +'%Y-%m-%d %H:%M:%SZ')] Sync complete."
 }
 
-sync_releases
+sync_releases "$@"

@@ -30,6 +30,7 @@ import tempfile
 import threading
 import time
 import subprocess
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from http.cookies import SimpleCookie
@@ -439,10 +440,32 @@ def read_request_body(handler: BaseHTTPRequestHandler) -> Tuple[Optional[bytes],
         return None, (400, {"ok": False, "error": f"Failed reading request body: {exc}"})
 
 
+TRUST_FORWARD_AUTH: bool = os.environ.get("TRUST_FORWARD_AUTH", "").strip().lower() in ("true", "1", "yes")
+
+
+def is_https_request(headers: Any) -> bool:
+    """Check if request was served over HTTPS (direct or forwarded by reverse proxy)."""
+    if hasattr(headers, "get"):
+        return (headers.get("X-Forwarded-Proto") or "").lower() == "https"
+    return False
+
+
 def verify_admin_request(headers: Any) -> bool:
-    """Verify request headers or cookies against ADMIN_PASSWORD or active session."""
+    """Verify request headers or cookies against ADMIN_PASSWORD, active session, or ForwardAuth SSO."""
     if not is_auth_required():
         return True
+
+    # 1. Check Reverse-Proxy SSO / ForwardAuth headers (Authelia, Authentik, Cloudflare Access)
+    trust_sso = TRUST_FORWARD_AUTH or os.environ.get("TRUST_FORWARD_AUTH", "").strip().lower() in ("true", "1", "yes")
+    if trust_sso and hasattr(headers, "get"):
+        forwarded_user = (
+            headers.get("Remote-User") or
+            headers.get("X-Forwarded-User") or
+            headers.get("X-Auth-Request-User") or
+            ""
+        ).strip()
+        if forwarded_user:
+            return True
 
     expected = get_admin_password()
     session_token = get_cookie_value(headers, SESSION_COOKIE_NAME)
@@ -501,8 +524,8 @@ def check_admin_auth(handler: BaseHTTPRequestHandler) -> Tuple[bool, Optional[Tu
     return False, (401, {"ok": False, "error": "Unauthorized: Invalid or missing admin credentials"}, {})
 
 
-def trigger_sync() -> Tuple[Dict[str, Any], int]:
-    """Trigger background sync.sh execution and reap child process to prevent zombie processes."""
+def trigger_sync(app_key: Optional[str] = None) -> Tuple[Dict[str, Any], int]:
+    """Trigger background sync.sh execution (full suite or targeted single-app sync)."""
     if SYNC_LOCK_FILE.exists():
         try:
             pid = int(SYNC_LOCK_FILE.read_text().strip())
@@ -515,9 +538,13 @@ def trigger_sync() -> Tuple[Dict[str, Any], int]:
     if not SYNC_SCRIPT_PATH.is_file():
         return {"ok": False, "error": f"sync script not found at {SYNC_SCRIPT_PATH}"}, 500
 
+    cmd = [str(SYNC_SCRIPT_PATH)]
+    if app_key and APP_NAME_RE.fullmatch(app_key):
+        cmd.append(app_key)
+
     try:
         proc = subprocess.Popen(
-            [str(SYNC_SCRIPT_PATH)],
+            cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
@@ -532,7 +559,8 @@ def trigger_sync() -> Tuple[Dict[str, Any], int]:
 
         threading.Thread(target=_reap, args=(proc,), daemon=True).start()
 
-        return {"ok": True, "message": "Sync started in background", "pid": proc.pid}, 200
+        msg = f"Sync started for {app_key}" if app_key else "Sync started in background"
+        return {"ok": True, "message": msg, "pid": proc.pid}, 200
     except Exception as exc:
         return {"ok": False, "error": f"Failed to execute sync script: {exc}"}, 500
 
@@ -981,12 +1009,21 @@ def switch_version(app: str, tag: str) -> Tuple[Dict[str, Any], int]:
 # Request handler
 # ---------------------------------------------------------------------------
 
-CORS_HEADERS: Dict[str, str] = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Admin-Password, Cookie",
-    "Access-Control-Expose-Headers": "X-Auth-Required, Set-Cookie, Retry-After",
-}
+CORS_ORIGIN: str = os.environ.get("CORS_ORIGIN", "").strip()
+
+
+def get_cors_headers(origin: Optional[str] = None) -> Dict[str, str]:
+    """Return CORS headers. Only permits cross-origin requests if CORS_ORIGIN is configured."""
+    headers: Dict[str, str] = {
+        "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Admin-Password, Cookie, Remote-User, X-Forwarded-User",
+        "Access-Control-Expose-Headers": "X-Auth-Required, Set-Cookie, Retry-After",
+    }
+    allowed_origin = CORS_ORIGIN or os.environ.get("CORS_ORIGIN", "").strip()
+    if allowed_origin:
+        if allowed_origin == "*" or (origin and origin == allowed_origin):
+            headers["Access-Control-Allow-Origin"] = origin or allowed_origin
+    return headers
 
 
 class SwitchAPIHandler(BaseHTTPRequestHandler):
@@ -1145,10 +1182,11 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
             if provided_pw and verify_password(expected, provided_pw):
                 rate_limiter.record_success(client_ip)
                 token = session_manager.create_session()
+                secure_attr = "; Secure" if is_https_request(self.headers) else ""
                 cookie_header = (
                     f"{SESSION_COOKIE_NAME}={token}; "
                     f"Max-Age={SESSION_DURATION_SECONDS}; "
-                    f"Path=/api; HttpOnly; SameSite=Strict"
+                    f"Path=/api; HttpOnly; SameSite=Strict{secure_attr}"
                 )
                 self._send(200, {
                     "ok": True,
@@ -1174,8 +1212,9 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
             # If an invalid or expired cookie was presented, clear it in client browser
             extra_hdrs: Dict[str, str] = {}
             if cookie_token:
+                secure_attr = "; Secure" if is_https_request(self.headers) else ""
                 extra_hdrs["Set-Cookie"] = (
-                    f"{SESSION_COOKIE_NAME}=; Max-Age=0; Path=/api; HttpOnly; SameSite=Strict"
+                    f"{SESSION_COOKIE_NAME}=; Max-Age=0; Path=/api; HttpOnly; SameSite=Strict{secure_attr}"
                 )
 
             self._send(401, {"ok": False, "error": "Unauthorized: Invalid admin password"}, extra_hdrs)
@@ -1191,7 +1230,8 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
                     token = auth_hdr[7:].strip()
             if token:
                 session_manager.revoke_session(token)
-            cookie_header = f"{SESSION_COOKIE_NAME}=; Max-Age=0; Path=/api; HttpOnly; SameSite=Strict"
+            secure_attr = "; Secure" if is_https_request(self.headers) else ""
+            cookie_header = f"{SESSION_COOKIE_NAME}=; Max-Age=0; Path=/api; HttpOnly; SameSite=Strict{secure_attr}"
             self._send(200, {"ok": True, "message": "Admin session terminated"}, {"Set-Cookie": cookie_header})
             log("POST", self.path, 200)
             return
@@ -1206,7 +1246,21 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
 
         # POST /api/sync
         if path == "/api/sync":
-            body, status = trigger_sync()
+            app_target = None
+            if "?" in self.path:
+                q = urllib.parse.parse_qs(self.path.split("?", 1)[1])
+                app_target = (q.get("app") or [None])[0]
+            if not app_target:
+                payload, _ = read_request_body(self)
+                if payload and payload != b"{}":
+                    try:
+                        bdata = json.loads(payload.decode("utf-8"))
+                        if isinstance(bdata, dict):
+                            app_target = bdata.get("app")
+                    except Exception:
+                        pass
+
+            body, status = trigger_sync(app_target)
             self._send(status, body)
             log("POST", self.path, status)
             return
@@ -1223,7 +1277,7 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
 
             body, status = add_or_update_catalog_app(app_key, data)
             if status == 200 and data.get("sync_now"):
-                trigger_sync()
+                trigger_sync(app_key)
             self._send(status, body)
             log("POST", self.path, status)
             return
@@ -1260,7 +1314,7 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
 
             body, status = add_or_update_catalog_app(app_key, data)
             if status == 200 and data.get("sync_now"):
-                trigger_sync()
+                trigger_sync(app_key)
             self._send(status, body)
             log("PUT", self.path, status)
             return
@@ -1327,7 +1381,8 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("X-Auth-Required", "true" if is_auth_required() else "false")
-        for k, v in CORS_HEADERS.items():
+        req_origin = self.headers.get("Origin") if hasattr(self, "headers") and self.headers else None
+        for k, v in get_cors_headers(req_origin).items():
             self.send_header(k, v)
         if extra_headers:
             for k, v in extra_headers.items():

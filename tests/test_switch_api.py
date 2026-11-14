@@ -399,6 +399,23 @@ class TestAdminPasswordProtection(unittest.TestCase):
         self.assertFalse(switch_api.verify_admin_request({"X-Admin-Password": "wrong"}))
         self.assertFalse(switch_api.verify_admin_request({"Cookie": "artcraft_session=invalid_token"}))
 
+    def test_forward_auth_sso_headers(self):
+        os.environ["ADMIN_PASSWORD"] = "secret123"
+        # When TRUST_FORWARD_AUTH is false or unset, SSO headers are ignored
+        os.environ["TRUST_FORWARD_AUTH"] = "false"
+        self.assertFalse(switch_api.verify_admin_request({"Remote-User": "admin@homelab.local"}))
+
+        # When TRUST_FORWARD_AUTH is true, valid SSO headers authenticate request
+        os.environ["TRUST_FORWARD_AUTH"] = "true"
+        try:
+            self.assertTrue(switch_api.verify_admin_request({"Remote-User": "admin@homelab.local"}))
+            self.assertTrue(switch_api.verify_admin_request({"X-Forwarded-User": "admin"}))
+            self.assertTrue(switch_api.verify_admin_request({"X-Auth-Request-User": "admin"}))
+            self.assertFalse(switch_api.verify_admin_request({"Remote-User": "   "}))
+            self.assertFalse(switch_api.verify_admin_request({}))
+        finally:
+            os.environ["TRUST_FORWARD_AUTH"] = "false"
+
     def test_manifest_returns_authenticated_status(self):
         os.environ["ADMIN_PASSWORD"] = "secret123"
         # Without headers
@@ -723,6 +740,71 @@ class TestSecurityAndConcurrency(unittest.TestCase):
             switch_api.CATALOG_FILE = orig_cat
             switch_api.LOCAL_CATALOG_FILE = orig_local
             shutil.rmtree(test_dir, ignore_errors=True)
+
+
+class TestHardeningAndTargetedSync(unittest.TestCase):
+    """Test HTTPS detection, CORS restrictions, and targeted single-app sync invocation."""
+
+    def test_is_https_request(self):
+        self.assertTrue(switch_api.is_https_request({"X-Forwarded-Proto": "https"}))
+        self.assertTrue(switch_api.is_https_request({"X-Forwarded-Proto": "HTTPS"}))
+        self.assertFalse(switch_api.is_https_request({"X-Forwarded-Proto": "http"}))
+        self.assertFalse(switch_api.is_https_request({}))
+        self.assertFalse(switch_api.is_https_request(None))
+
+    def test_cors_headers_configurable(self):
+        # Default: no CORS origin allowed
+        orig_cors = os.environ.get("CORS_ORIGIN")
+        try:
+            if "CORS_ORIGIN" in os.environ:
+                del os.environ["CORS_ORIGIN"]
+            switch_api.CORS_ORIGIN = ""
+            h_none = switch_api.get_cors_headers("https://malicious.com")
+            self.assertNotIn("Access-Control-Allow-Origin", h_none)
+
+            # Specific allowed origin
+            os.environ["CORS_ORIGIN"] = "https://hub.example.com"
+            h_allowed = switch_api.get_cors_headers("https://hub.example.com")
+            self.assertEqual(h_allowed.get("Access-Control-Allow-Origin"), "https://hub.example.com")
+
+            h_denied = switch_api.get_cors_headers("https://evil.com")
+            self.assertNotIn("Access-Control-Allow-Origin", h_denied)
+
+            # Wildcard
+            os.environ["CORS_ORIGIN"] = "*"
+            h_wild = switch_api.get_cors_headers("https://anywhere.com")
+            self.assertEqual(h_wild.get("Access-Control-Allow-Origin"), "https://anywhere.com")
+        finally:
+            if orig_cors is not None:
+                os.environ["CORS_ORIGIN"] = orig_cors
+            elif "CORS_ORIGIN" in os.environ:
+                del os.environ["CORS_ORIGIN"]
+            switch_api.CORS_ORIGIN = ""
+
+    def test_trigger_sync_passes_app_key(self):
+        from unittest.mock import patch, MagicMock
+
+        # With app_key
+        with patch("subprocess.Popen") as mock_popen:
+            mock_proc = MagicMock()
+            mock_proc.pid = 99999
+            mock_popen.return_value = mock_proc
+
+            pid = switch_api.trigger_sync("anicraft")
+            self.assertEqual(pid, 99999)
+            cmd = mock_popen.call_args[0][0]
+            self.assertIn("anicraft", cmd)
+
+        # Global sync (no app_key)
+        with patch("subprocess.Popen") as mock_popen:
+            mock_proc = MagicMock()
+            mock_proc.pid = 88888
+            mock_popen.return_value = mock_proc
+
+            pid = switch_api.trigger_sync()
+            self.assertEqual(pid, 88888)
+            cmd = mock_popen.call_args[0][0]
+            self.assertNotIn("anicraft", cmd)
 
 
 if __name__ == "__main__":

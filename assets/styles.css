@@ -658,6 +658,19 @@
       color: #ffffff;
     }
 
+    .artcraft-explore-btn.is-disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      pointer-events: none;
+      color: #64748b !important;
+      background: #090a0f !important;
+    }
+
+    .artcraft-pill-stage.is-uninstalled {
+      opacity: 0.75;
+      border-style: dashed !important;
+    }
+
     .artcraft-arrow {
       font-size: 0.95rem;
       transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s ease;
