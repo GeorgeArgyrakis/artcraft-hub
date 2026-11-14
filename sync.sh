@@ -376,6 +376,10 @@ discover_new_apps() {
       fi
     done
     if [ "$is_known" = false ]; then
+      # Exclude candidate apps that do not have WebAssembly builds published yet (e.g. AniCraft is desktop-only)
+      if [ "$c" = "anicraft" ]; then
+        continue
+      fi
       new_discovered+=("$c")
     fi
   done
@@ -525,7 +529,8 @@ sync_releases() {
       | .browser_download_url' | head -n 1)
 
     if [ -z "${download_url}" ]; then
-      echo "  [WARN] No *web*.zip asset found for ${reponame} ${tag}. Skipping."
+      echo "  [WARN] No WebAssembly (*web*.zip) asset found for ${reponame} ${tag}. Skipping."
+      update_versions_json "${reponame}"
       continue
     fi
 

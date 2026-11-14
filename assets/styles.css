@@ -669,6 +669,38 @@
     .artcraft-pill-stage.is-uninstalled {
       opacity: 0.75;
       border-style: dashed !important;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    /* Uninstalled / Not Installed App Cards */
+    .app-card.is-uninstalled {
+      opacity: 0.85;
+    }
+
+    .app-card.is-uninstalled:hover {
+      border-color: #2e384d;
+    }
+
+    [data-theme="artcraft"] .app-card.is-uninstalled:hover .artcraft-preview-img,
+    [data-theme="artcraft"] .app-card.is-uninstalled:hover .artcraft-card-preview svg {
+      transform: none;
+    }
+
+    .artcraft-card-preview.is-disabled {
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    .app-icon-link.is-disabled,
+    .app-title-link.is-disabled {
+      cursor: not-allowed;
+      pointer-events: none;
+      text-decoration: none;
+    }
+
+    .app-title-link.is-disabled h3.app-title {
+      cursor: not-allowed;
     }
 
     .artcraft-arrow {

@@ -757,7 +757,7 @@ def resolve_app_preview(app_name: str) -> Optional[str]:
     return None
 
 
-KNOWN_APP_METADATA: Dict[str, Dict[str, str]] = {
+KNOWN_APP_METADATA: Dict[str, Dict[str, Any]] = {
     "anicraft": {
         "title": "AniCraft",
         "category": "Graphics & Photo",
@@ -765,6 +765,7 @@ KNOWN_APP_METADATA: Dict[str, Dict[str, str]] = {
         "accentColor": "#a855f7",
         "tagline": "2D Vector Animation Studio",
         "desc": "Open-source 2D animation, vector tweens, and interactive timelines.",
+        "webReady": False,  # Upstream is developing WebAssembly build; desktop-only currently
     },
     "materialcraft": {
         "title": "MaterialCraft",
@@ -773,6 +774,7 @@ KNOWN_APP_METADATA: Dict[str, Dict[str, str]] = {
         "accentColor": "#e11d48",
         "tagline": "Procedural PBR Material Authoring",
         "desc": "Open-source procedural PBR material designer and shader authoring in pure Rust.",
+        "webReady": True,
     },
     "solidcraft": {
         "title": "SolidCraft",
@@ -781,6 +783,7 @@ KNOWN_APP_METADATA: Dict[str, Dict[str, str]] = {
         "accentColor": "#0284c7",
         "tagline": "Parametric Solid Modeling",
         "desc": "Open-source boundary representation and parametric solid modeling engine.",
+        "webReady": True,
     },
 }
 
@@ -850,6 +853,9 @@ def discover_upstream_apps() -> List[Dict[str, Any]]:
     discovered = []
     for slug in sorted(candidate_slugs):
         if slug in catalog:
+            continue
+        # Only discover apps that have WebAssembly builds published upstream
+        if slug in KNOWN_APP_METADATA and not KNOWN_APP_METADATA[slug].get("webReady", True):
             continue
         if slug in KNOWN_APP_METADATA:
             m = KNOWN_APP_METADATA[slug]

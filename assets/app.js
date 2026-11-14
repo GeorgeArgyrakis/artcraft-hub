@@ -655,34 +655,39 @@
       `;
     }
 
-    function getAppPreviewHtml(appInfo, meta, previewSvg) {
+    function getAppPreviewHtml(appInfo, meta, previewSvg, isInstalled = true, launchUrl = '#', launchTitle = '') {
       const resolvedPreview = appInfo.preview !== undefined ? appInfo.preview : (meta && meta.preview !== undefined ? meta.preview : undefined);
-
-      if (resolvedPreview === null) {
-        return `
-          <a href="/${escapeHtml(appInfo.app)}/" class="artcraft-card-preview" target="_blank" rel="noopener" title="Launch ${escapeHtml(meta.title)}">
-            <div class="artcraft-preview-fallback" style="display: block; width: 100%; height: 100%;">
-              ${previewSvg}
-            </div>
-          </a>
-        `;
-      }
-
       const previewSrc = typeof resolvedPreview === 'string' && resolvedPreview ? resolvedPreview : `/previews/${escapeHtml(appInfo.app)}.webp`;
 
-      return `
-        <a href="/${escapeHtml(appInfo.app)}/" class="artcraft-card-preview" target="_blank" rel="noopener" title="Launch ${escapeHtml(meta.title)}">
-          <img src="${escapeHtml(previewSrc)}" 
-               alt="${escapeHtml(meta.title)} Interface Preview" 
-               class="artcraft-preview-img" 
-               loading="lazy" 
-               decoding="async"
-               onerror="if (this.dataset.triedOnline !== 'true') { this.dataset.triedOnline = 'true'; this.src = 'https://getartcraft.com/images/apps/${escapeHtml(appInfo.app)}/${appInfo.app === 'filmcraft' ? 'color' : 'hero'}.webp'; } else { this.style.display='none'; this.nextElementSibling.style.display='block'; }">
-          <div class="artcraft-preview-fallback" style="display: none; width: 100%; height: 100%;">
-            ${previewSvg}
-          </div>
-        </a>
+      const innerContent = resolvedPreview === null ? `
+        <div class="artcraft-preview-fallback" style="display: block; width: 100%; height: 100%;">
+          ${previewSvg}
+        </div>
+      ` : `
+        <img src="${escapeHtml(previewSrc)}" 
+             alt="${escapeHtml(meta.title)} Interface Preview" 
+             class="artcraft-preview-img" 
+             loading="lazy" 
+             decoding="async"
+             onerror="if (this.dataset.triedOnline !== 'true') { this.dataset.triedOnline = 'true'; this.src = 'https://getartcraft.com/images/apps/${escapeHtml(appInfo.app)}/${appInfo.app === 'filmcraft' ? 'color' : 'hero'}.webp'; } else { this.style.display='none'; this.nextElementSibling.style.display='block'; }">
+        <div class="artcraft-preview-fallback" style="display: none; width: 100%; height: 100%;">
+          ${previewSvg}
+        </div>
       `;
+
+      if (isInstalled) {
+        return `
+          <a href="${launchUrl}" class="artcraft-card-preview app-preview-link" target="_blank" rel="noopener" title="${launchTitle}">
+            ${innerContent}
+          </a>
+        `;
+      } else {
+        return `
+          <div class="artcraft-card-preview is-disabled" title="${launchTitle}">
+            ${innerContent}
+          </div>
+        `;
+      }
     }
 
     /* -------------------------------------------------------------
@@ -713,7 +718,7 @@
       const updatedDate = formatDate(activeRelease.downloaded_at);
 
       const card = document.createElement('div');
-      card.className = `app-card ${isPinned ? 'is-pinned' : ''} ${!isVisible ? 'is-hidden' : ''}`;
+      card.className = `app-card ${isPinned ? 'is-pinned' : ''} ${!isVisible ? 'is-hidden' : ''} ${!isInstalled ? 'is-uninstalled' : ''}`;
       card.dataset.app = appInfo.app;
       card.dataset.category = meta.category;
 
@@ -755,7 +760,7 @@
           </div>
 
           <!-- ArtCraft Theme Preview Graphic -->
-          ${getAppPreviewHtml(appInfo, meta, previewSvg)}
+          ${getAppPreviewHtml(appInfo, meta, previewSvg, isInstalled, launchUrl, launchTitle)}
 
           <!-- Card Main Content -->
           <div class="card-inner-content">
@@ -904,6 +909,17 @@
         togglePin(appInfo.app);
       });
 
+      // Prevent any clicks or navigation on uninstalled app cards
+      if (!isInstalled) {
+        card.addEventListener('click', (e) => {
+          if (e.target.closest('.card-action-btn') || e.target.closest('.btn-pin')) {
+            return;
+          }
+          e.preventDefault();
+          e.stopPropagation();
+        });
+      }
+
       // Version switcher elements
       const chipBtn = card.querySelector(`#chip-${appInfo.app}`);
       const menuEl = card.querySelector(`#menu-${appInfo.app}`);
@@ -971,7 +987,7 @@
                   }
                   // Dynamically update launch links with cache-busting version query parameter
                   const updatedLaunchUrl = `/${encodeURIComponent(appInfo.app)}/?v=${encodeURIComponent(activeTag)}`;
-                  card.querySelectorAll('a.app-icon-link, a.app-title-link, a.artcraft-explore-btn').forEach(a => {
+                  card.querySelectorAll('a.app-icon-link, a.app-title-link, a.artcraft-explore-btn, a.app-preview-link').forEach(a => {
                     a.href = updatedLaunchUrl;
                     a.title = `Launch ${escapedTitle} (${activeTag})`;
                   });
