@@ -784,27 +784,43 @@ class TestHardeningAndTargetedSync(unittest.TestCase):
     def test_trigger_sync_passes_app_key(self):
         from unittest.mock import patch, MagicMock
 
-        # With app_key
-        with patch("subprocess.Popen") as mock_popen:
-            mock_proc = MagicMock()
-            mock_proc.pid = 99999
-            mock_popen.return_value = mock_proc
+        fake_script = tempfile.NamedTemporaryFile(delete=False)
+        fake_script.close()
+        orig_script = switch_api.SYNC_SCRIPT_PATH
+        switch_api.SYNC_SCRIPT_PATH = Path(fake_script.name)
 
-            pid = switch_api.trigger_sync("anicraft")
-            self.assertEqual(pid, 99999)
-            cmd = mock_popen.call_args[0][0]
-            self.assertIn("anicraft", cmd)
+        try:
+            # With app_key
+            with patch("subprocess.Popen") as mock_popen:
+                mock_proc = MagicMock()
+                mock_proc.pid = 99999
+                mock_popen.return_value = mock_proc
 
-        # Global sync (no app_key)
-        with patch("subprocess.Popen") as mock_popen:
-            mock_proc = MagicMock()
-            mock_proc.pid = 88888
-            mock_popen.return_value = mock_proc
+                body, status = switch_api.trigger_sync("anicraft")
+                self.assertEqual(status, 200)
+                self.assertTrue(body.get("ok"))
+                self.assertEqual(body.get("pid"), 99999)
+                cmd = mock_popen.call_args[0][0]
+                self.assertIn("anicraft", cmd)
 
-            pid = switch_api.trigger_sync()
-            self.assertEqual(pid, 88888)
-            cmd = mock_popen.call_args[0][0]
-            self.assertNotIn("anicraft", cmd)
+            # Global sync (no app_key)
+            with patch("subprocess.Popen") as mock_popen:
+                mock_proc = MagicMock()
+                mock_proc.pid = 88888
+                mock_popen.return_value = mock_proc
+
+                body, status = switch_api.trigger_sync()
+                self.assertEqual(status, 200)
+                self.assertTrue(body.get("ok"))
+                self.assertEqual(body.get("pid"), 88888)
+                cmd = mock_popen.call_args[0][0]
+                self.assertNotIn("anicraft", cmd)
+        finally:
+            switch_api.SYNC_SCRIPT_PATH = orig_script
+            try:
+                os.unlink(fake_script.name)
+            except OSError:
+                pass
 
 
 if __name__ == "__main__":

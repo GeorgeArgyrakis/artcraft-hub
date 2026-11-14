@@ -535,10 +535,15 @@ def trigger_sync(app_key: Optional[str] = None) -> Tuple[Dict[str, Any], int]:
         except (ValueError, OSError):
             SYNC_LOCK_FILE.unlink(missing_ok=True)
 
-    if not SYNC_SCRIPT_PATH.is_file():
-        return {"ok": False, "error": f"sync script not found at {SYNC_SCRIPT_PATH}"}, 500
+    sync_script = SYNC_SCRIPT_PATH
+    if not sync_script.is_file():
+        local_script = Path(__file__).resolve().parent / "sync.sh"
+        if local_script.is_file():
+            sync_script = local_script
+        else:
+            return {"ok": False, "error": f"sync script not found at {SYNC_SCRIPT_PATH}"}, 500
 
-    cmd = [str(SYNC_SCRIPT_PATH)]
+    cmd = [str(sync_script)]
     if app_key and APP_NAME_RE.fullmatch(app_key):
         cmd.append(app_key)
 
