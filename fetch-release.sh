@@ -99,21 +99,30 @@ EXISTING_JSON="{}"
 [ -f "${VERSIONS_FILE}" ] && EXISTING_JSON=$(cat "${VERSIONS_FILE}")
 ACTIVE=$(cat "${TARGET_DIR}/${REPONAME}/active.txt" 2>/dev/null || echo "")
 
-RELEASES_JSON=$(
-  for d in $(ls -1 "${TARGET_DIR}/${REPONAME}/releases" 2>/dev/null | sort -rV); do
+RELEASES_JSON="[]"
+if [ -d "${TARGET_DIR}/${REPONAME}/releases" ]; then
+  rel_lines=()
+  while IFS= read -r d || [ -n "$d" ]; do
+    [[ -z "$d" ]] && continue
     existing_at=$(echo "${EXISTING_JSON}" | \
       jq -r --arg t "${d}" '.releases[]? | select(.tag == $t) | .downloaded_at // empty')
     [ -z "${existing_at}" ] && existing_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-    echo "{\"tag\":\"${d}\",\"downloaded_at\":\"${existing_at}\"}"
-  done | jq -s '.'
-)
+    rel_lines+=("{\"tag\":\"${d}\",\"downloaded_at\":\"${existing_at}\"}")
+  done < <(ls -1 "${TARGET_DIR}/${REPONAME}/releases" 2>/dev/null | sort -rV)
 
+  if [ ${#rel_lines[@]} -gt 0 ]; then
+    RELEASES_JSON=$(printf '%s\n' "${rel_lines[@]}" | jq -s '.')
+  fi
+fi
+
+TMP_VF="${VERSIONS_FILE}.tmp.$$"
 jq -n \
   --arg app  "${REPONAME}" \
   --arg active "${ACTIVE}" \
   --argjson releases "${RELEASES_JSON}" \
   '{"app":$app,"active":$active,"releases":$releases}' \
-  > "${VERSIONS_FILE}"
+  > "${TMP_VF}"
+mv -f "${TMP_VF}" "${VERSIONS_FILE}"
 
 echo ""
 echo "✓ ${REPONAME}@${TAG} is now available."

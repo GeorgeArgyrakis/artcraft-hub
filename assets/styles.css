@@ -2072,19 +2072,19 @@
       transform: translateY(-1px);
     }
 
-    .card-action-btn.btn-delete:hover {
+    .card-action-btn.btn-del-app:hover {
       background: rgba(244, 63, 94, 0.2);
       border-color: rgba(244, 63, 94, 0.4);
       color: #fda4af;
     }
 
-    .card-action-btn.btn-edit:hover {
+    .card-action-btn.btn-edit-app:hover {
       background: rgba(99, 102, 241, 0.2);
       border-color: rgba(99, 102, 241, 0.4);
       color: #c7d2fe;
     }
 
-    .card-action-btn.btn-visibility:hover {
+    .card-action-btn.btn-vis-toggle:hover {
       background: rgba(245, 158, 11, 0.2);
       border-color: rgba(245, 158, 11, 0.4);
     }

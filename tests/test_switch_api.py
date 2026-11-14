@@ -399,6 +399,17 @@ class TestAdminPasswordProtection(unittest.TestCase):
         self.assertFalse(switch_api.verify_admin_request({"X-Admin-Password": "wrong"}))
         self.assertFalse(switch_api.verify_admin_request({"Cookie": "artcraft_session=invalid_token"}))
 
+    def test_manifest_returns_authenticated_status(self):
+        os.environ["ADMIN_PASSWORD"] = "secret123"
+        # Without headers
+        manifest_unauth = switch_api.get_manifest({})
+        self.assertIn("authenticated", manifest_unauth)
+        self.assertFalse(manifest_unauth["authenticated"])
+
+        # With admin headers
+        manifest_auth = switch_api.get_manifest({"X-Admin-Password": "secret123"})
+        self.assertTrue(manifest_auth["authenticated"])
+
 
 class TestPasswordVerification(unittest.TestCase):
     """Test SHA-256 pre-hashed constant-time password verification."""

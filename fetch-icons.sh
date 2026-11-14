@@ -69,11 +69,19 @@ else
   # Fetch for all apps in catalog.json
   all_repos=()
 
-  if [ -f "${CATALOG_FILE}" ]; then
+  cat_file=""
+  for p in "${CATALOG_FILE:-/config/catalog.json}" "/usr/local/share/artcraft/catalog.json" "./config/catalog.json"; do
+    if [ -f "$p" ]; then
+      cat_file="$p"
+      break
+    fi
+  done
+
+  if [ -n "${cat_file}" ] && [ -f "${cat_file}" ]; then
     while IFS= read -r r || [ -n "$r" ]; do
       [[ -z "$r" ]] && continue
       all_repos+=("$r")
-    done < <(jq -r 'to_entries[] | .value.repo // empty' "${CATALOG_FILE}" 2>/dev/null || true)
+    done < <(jq -r 'to_entries[] | .value.repo // empty' "${cat_file}" 2>/dev/null || true)
   fi
 
   echo "=== Synchronizing official vector icons from GitHub ==="

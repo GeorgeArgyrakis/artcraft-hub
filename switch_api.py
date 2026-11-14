@@ -856,7 +856,7 @@ def discover_upstream_apps() -> List[Dict[str, Any]]:
     return discovered
 
 
-def get_manifest() -> Dict[str, Any]:
+def get_manifest(headers: Optional[Any] = None) -> Dict[str, Any]:
     """Scan TARGET_DIR and return combined manifest dict, including registered catalog apps."""
     base = Path(TARGET_DIR)
     apps: List[Dict[str, Any]] = []
@@ -904,6 +904,7 @@ def get_manifest() -> Dict[str, Any]:
         "system": get_status(),
         "catalog": catalog,
         "auth_required": is_auth_required(),
+        "authenticated": verify_admin_request(headers) if headers is not None else (not is_auth_required()),
         "discovered_apps": get_discovered_apps(),
     }
 
@@ -1032,7 +1033,7 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
 
         # GET /api/manifest
         if path == "/api/manifest":
-            body = get_manifest()
+            body = get_manifest(self.headers)
             self._send(200, body)
             log("GET", self.path, 200)
             return
@@ -1158,17 +1159,26 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
                 log("POST", self.path, 200)
                 return
 
-            locked, retry_after = rate_limiter.record_failure(client_ip)
-            if locked:
-                self._send(429, {
-                    "ok": False,
-                    "error": "Too many failed authentication attempts. Please try again later.",
-                    "retry_after": retry_after
-                }, {"Retry-After": str(retry_after)})
-                log("POST", self.path, 429)
-                return
+            # If user provided a password and it failed, record failure against rate limiter
+            if provided_pw:
+                locked, retry_after = rate_limiter.record_failure(client_ip)
+                if locked:
+                    self._send(429, {
+                        "ok": False,
+                        "error": "Too many failed authentication attempts. Please try again later.",
+                        "retry_after": retry_after
+                    }, {"Retry-After": str(retry_after)})
+                    log("POST", self.path, 429)
+                    return
 
-            self._send(401, {"ok": False, "error": "Unauthorized: Invalid admin password"})
+            # If an invalid or expired cookie was presented, clear it in client browser
+            extra_hdrs: Dict[str, str] = {}
+            if cookie_token:
+                extra_hdrs["Set-Cookie"] = (
+                    f"{SESSION_COOKIE_NAME}=; Max-Age=0; Path=/api; HttpOnly; SameSite=Strict"
+                )
+
+            self._send(401, {"ok": False, "error": "Unauthorized: Invalid admin password"}, extra_hdrs)
             log("POST", self.path, 401)
             return
 

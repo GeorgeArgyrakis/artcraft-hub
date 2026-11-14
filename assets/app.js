@@ -695,6 +695,14 @@
       const isPinned = pinnedApps.has(appInfo.app);
       const isVisible = meta.visible !== false;
 
+      const escapedTitle = escapeHtml(meta.title || appInfo.app);
+      const escapedTagline = escapeHtml(meta.tagline || `${escapedTitle} Studio App`);
+      const escapedDesc = escapeHtml(meta.desc || '');
+      const escapedCategoryName = escapeHtml(meta.categoryName || meta.category || 'Graphics & Photo');
+      const escapedCategoryTag = escapeHtml(meta.categoryTag || escapedCategoryName.toUpperCase());
+      const escapedNum = escapeHtml(meta.num || '01');
+      const safeAccent = (meta.accentColor && /^#[0-9a-fA-F]{6}$/.test(meta.accentColor)) ? meta.accentColor : '#2563eb';
+
       // Find release date for active version
       const activeRelease = releases.find(r => r.tag === activeTag) || releases[0] || {};
       const updatedDate = formatDate(activeRelease.downloaded_at);
@@ -734,8 +742,8 @@
           <!-- ArtCraft Theme Top Header (Numbered box + Category Tag) -->
           <div class="artcraft-card-topbar">
             <div class="artcraft-topbar-left">
-              <div class="artcraft-num-box" style="background: ${meta.accentColor || '#2563eb'};">${meta.num || '01'}</div>
-              <span class="artcraft-category-tag">${escapeHtml(meta.categoryTag || meta.categoryName.toUpperCase())}</span>
+              <div class="artcraft-num-box" style="background: ${safeAccent};">${escapedNum}</div>
+              <span class="artcraft-category-tag">${escapedCategoryTag}</span>
               ${!isVisible ? '<span class="hidden-badge">HIDDEN</span>' : ''}
             </div>
             ${editOverlayHtml}
@@ -748,8 +756,8 @@
           <div class="card-inner-content">
             <!-- App Icon overlapping preview -->
             <div class="artcraft-icon-wrapper">
-              <a href="/${appInfo.app}/" class="app-icon-link" target="_blank" rel="noopener" title="Launch ${meta.title}">
-                <div class="app-icon-slot" style="background: ${meta.accentColor || '#2563eb'};">
+              <a href="/${appInfo.app}/" class="app-icon-link" target="_blank" rel="noopener" title="Launch ${escapedTitle}">
+                <div class="app-icon-slot" style="background: ${safeAccent};">
                   ${getAppIconHtml(appInfo, meta)}
                 </div>
               </a>
@@ -758,8 +766,8 @@
             <!-- Title & Description Block -->
             <div class="card-meta">
               <div class="card-title-row">
-                <a href="/${appInfo.app}/" class="app-title-link" target="_blank" rel="noopener" title="Launch ${meta.title}">
-                  <h3 class="app-title" title="${meta.title}">${meta.title}</h3>
+                <a href="/${appInfo.app}/" class="app-title-link" target="_blank" rel="noopener" title="Launch ${escapedTitle}">
+                  <h3 class="app-title" title="${escapedTitle}">${escapedTitle}</h3>
                 </a>
                 <button class="btn-pin ${isPinned ? 'pinned' : ''}" id="pin-${appInfo.app}" title="${isPinned ? 'Unpin from favorites' : 'Pin to favorites'}">
                   <svg viewBox="0 0 24 24" fill="${isPinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -768,13 +776,13 @@
                   </svg>
                 </button>
               </div>
-              <p class="app-desc">${meta.desc}</p>
+              <p class="app-desc">${escapedDesc}</p>
             </div>
 
             <!-- Release Badges (Active Release Dropdown & Updated Date) -->
             <div class="artcraft-badges-row">
               <div class="version-dropdown-container">
-                <button type="button" class="active-version-btn artcraft-pill-stage ${releases.length > 1 ? 'has-dropdown' : 'single-version'}" id="chip-${appInfo.app}" title="${releases.length > 1 ? `Click to choose version (${releases.length} installed)` : escapeHtml(activeTag)}" aria-haspopup="${releases.length > 1 ? 'true' : 'false'}" aria-expanded="false" style="border-color: ${meta.accentColor || '#4e7bfb'}; color: ${meta.accentColor || '#4e7bfb'};">
+                <button type="button" class="active-version-btn artcraft-pill-stage ${releases.length > 1 ? 'has-dropdown' : 'single-version'}" id="chip-${appInfo.app}" title="${releases.length > 1 ? `Click to choose version (${releases.length} installed)` : escapeHtml(activeTag)}" aria-haspopup="${releases.length > 1 ? 'true' : 'false'}" aria-expanded="false" style="border-color: ${safeAccent}; color: ${safeAccent};">
                   <span class="version-tag-text" id="tag-text-${appInfo.app}">${escapeHtml(activeTag)}</span>
                   ${releases.length > 1 ? `
                   <svg class="chip-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -788,7 +796,7 @@
 
             <!-- ArtCraft Bottom Explore / Launch Action Button -->
             <a href="/${appInfo.app}/" class="artcraft-explore-btn" target="_blank" rel="noopener">
-              <span>EXPLORE ${meta.title.toUpperCase()}</span>
+              <span>EXPLORE ${escapedTitle.toUpperCase()}</span>
               <span class="artcraft-arrow">↗</span>
             </a>
           </div>
@@ -797,15 +805,15 @@
         // Original Glass Theme Card Layout
         card.innerHTML = `
           <div class="card-top">
-            <a href="/${appInfo.app}/" class="app-icon-link" target="_blank" rel="noopener" title="Launch ${meta.title}">
-              <div class="app-icon-slot" style="background: ${meta.accentColor || '#2563eb'};">
+            <a href="/${appInfo.app}/" class="app-icon-link" target="_blank" rel="noopener" title="Launch ${escapedTitle}">
+              <div class="app-icon-slot" style="background: ${safeAccent};">
                 ${getAppIconHtml(appInfo, meta)}
               </div>
             </a>
             <div class="card-meta">
               <div class="card-title-row">
-                <a href="/${appInfo.app}/" class="app-title-link" target="_blank" rel="noopener" title="Launch ${meta.title}">
-                  <h3 class="app-title" title="${meta.title}">${meta.title}</h3>
+                <a href="/${appInfo.app}/" class="app-title-link" target="_blank" rel="noopener" title="Launch ${escapedTitle}">
+                  <h3 class="app-title" title="${escapedTitle}">${escapedTitle}</h3>
                   <svg class="launch-icon-mini" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
                     <polyline points="15 3 21 3 21 9"></polyline>
@@ -814,7 +822,7 @@
                 </a>
                 <div class="card-badge-actions" style="display: flex; align-items: center; gap: 0.45rem;">
                   ${!isVisible ? '<span class="hidden-badge">HIDDEN</span>' : ''}
-                  <span class="app-category-pill">${meta.categoryName}</span>
+                  <span class="app-category-pill">${escapedCategoryName}</span>
                   <button class="btn-pin ${isPinned ? 'pinned' : ''}" id="pin-${appInfo.app}" title="${isPinned ? 'Unpin from favorites' : 'Pin to favorites'}">
                     <svg viewBox="0 0 24 24" fill="${isPinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <line x1="12" y1="17" x2="12" y2="22"></line>
@@ -824,8 +832,8 @@
                   ${editOverlayHtml}
                 </div>
               </div>
-              <div class="app-tagline">${meta.tagline}</div>
-              <p class="app-desc">${meta.desc}</p>
+              <div class="app-tagline">${escapedTagline}</div>
+              <p class="app-desc">${escapedDesc}</p>
             </div>
           </div>
 
@@ -1278,8 +1286,13 @@
         } else if (res.headers.get('X-Auth-Required') !== null) {
           isAuthRequired = res.headers.get('X-Auth-Required') === 'true';
         }
+
+        if (data.authenticated !== undefined) {
+          setAuthenticated(Boolean(data.authenticated));
+        } else {
+          checkExistingAuthSession();
+        }
         updateAuthUI();
-        checkExistingAuthSession();
 
         rawApps = data.apps || [];
         updateCategoryCounts();
@@ -1487,6 +1500,9 @@
         searchInput.select();
       } else if (e.key === 'Escape') {
         closeAllVersionMenus();
+        closeAppModal();
+        closeDeleteModal();
+        closeAuthModal();
         if (searchInput === document.activeElement) {
           searchInput.blur();
         }
@@ -1756,7 +1772,7 @@
       const visible = formVisible.checked;
       const syncNow = formSyncNow ? formSyncNow.checked : true;
 
-      const appSlug = (isEdit ? formAppKey.value : repo.split('/')[1] || repo).toLowerCase();
+      const appSlug = (isEdit ? formAppKey.value : (repo.split('/')[1] || repo)).trim().toLowerCase();
 
       if (!repo || !title || !category) {
         showToast('Validation Error', 'Repository, Title, and Category are required.', 'error');
@@ -1801,6 +1817,9 @@
           await fetchManifest();
           if (!isEdit && syncNow) {
             showToast('Sync Started', `Downloading latest release for ${title}...`, 'info');
+            isSyncing = true;
+            updateSystemStatus({ is_syncing: true });
+            startSyncPolling();
           }
         } else {
           showToast('Save Failed', data.error || 'Could not save application.', 'error');
@@ -2000,13 +2019,6 @@
         if (e.target === authModal) closeAuthModal();
       });
     }
-    window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        closeAppModal();
-        closeDeleteModal();
-        closeAuthModal();
-      }
-    });
 
     /* -------------------------------------------------------------
        Initialization & Global API Exports

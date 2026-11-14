@@ -4,14 +4,27 @@ set -Eeuo pipefail
 CATALOG_FILE="${CATALOG_FILE:-/config/catalog.json}"
 TARGET_DIR="${TARGET_DIR:-/data}"
 MAX_RELEASES="${MAX_RELEASES:-3}"
+SYNC_LOCK="/tmp/sync.lock"
+
+# Concurrency lock protection (compatible with switch_api.py trigger_sync, CLI, and cron)
+if [ -f "${SYNC_LOCK}" ]; then
+  locked_pid=$(cat "${SYNC_LOCK}" 2>/dev/null || echo "")
+  if [ -n "${locked_pid}" ] && kill -0 "${locked_pid}" 2>/dev/null && [ "${locked_pid}" -ne "$$" ]; then
+    echo "[WARN] Another sync process (PID ${locked_pid}) is already running. Exiting." >&2
+    exit 0
+  fi
+fi
+echo "$$" > "${SYNC_LOCK}"
 
 cleanup_on_exit() {
   local exit_code=$?
-  rm -f "/tmp/sync.lock" 2>/dev/null || true
+  rm -f "${SYNC_LOCK}" 2>/dev/null || true
   if [ "${exit_code}" -ne 0 ]; then
     local ts
     ts=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-    echo "{\"status\":\"idle\",\"last_sync\":\"${ts}\",\"last_success\":false,\"exit_code\":${exit_code}}" > "${TARGET_DIR}/.sync_status.json" 2>/dev/null || true
+    local tmp_status="${TARGET_DIR}/.sync_status.json.tmp.$$"
+    echo "{\"status\":\"idle\",\"last_sync\":\"${ts}\",\"last_success\":false,\"exit_code\":${exit_code}}" > "${tmp_status}" 2>/dev/null || true
+    mv -f "${tmp_status}" "${TARGET_DIR}/.sync_status.json" 2>/dev/null || true
   fi
 }
 trap cleanup_on_exit EXIT
@@ -21,11 +34,20 @@ trap cleanup_on_exit EXIT
 # ---------------------------------------------------------------------------
 read_apps() {
   local apps=()
+  local cat_file=""
+
+  # Locate existing catalog.json (user config, bundled share, or local)
+  for p in "${CATALOG_FILE:-/config/catalog.json}" "/usr/local/share/artcraft/catalog.json" "./config/catalog.json"; do
+    if [ -f "$p" ]; then
+      cat_file="$p"
+      break
+    fi
+  done
 
   # Read repos defined in catalog.json
-  if [ -f "${CATALOG_FILE}" ]; then
+  if [ -n "${cat_file}" ] && [ -f "${cat_file}" ]; then
     local cat_repos
-    cat_repos=$(jq -r 'to_entries[] | .value.repo // empty' "${CATALOG_FILE}" 2>/dev/null || true)
+    cat_repos=$(jq -r 'to_entries[] | .value.repo // empty' "${cat_file}" 2>/dev/null || true)
     while IFS= read -r repo || [ -n "$repo" ]; do
       [[ -z "$repo" ]] && continue
       apps+=("$repo")
@@ -33,7 +55,7 @@ read_apps() {
   fi
 
   if [ ${#apps[@]} -eq 0 ]; then
-    echo "[WARN] No apps found in ${CATALOG_FILE}. Nothing to sync." >&2
+    echo "[WARN] No apps found in catalog (${cat_file:-${CATALOG_FILE}}). Nothing to sync." >&2
     return 1
   fi
 
@@ -59,25 +81,31 @@ update_versions_json() {
   # Build releases array from directories on disk, sorted newest-first (lexicographic desc)
   local releases_json="[]"
   if [ -d "${releases_dir}" ]; then
-    releases_json=$(
-      for d in $(ls -1 "${releases_dir}" 2>/dev/null | sort -rV); do
-        # Get downloaded_at from existing json or use current time
-        local existing_at
-        existing_at=$(echo "${existing_json}" | jq -r --arg t "${d}" '.releases[]? | select(.tag == $t) | .downloaded_at // empty')
-        if [ -z "${existing_at}" ]; then
-          existing_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-        fi
-        echo "{\"tag\":\"${d}\",\"downloaded_at\":\"${existing_at}\"}"
-      done | jq -s '.'
-    )
+    local rel_lines=()
+    while IFS= read -r d || [ -n "$d" ]; do
+      [[ -z "$d" ]] && continue
+      # Get downloaded_at from existing json or use current time
+      local existing_at
+      existing_at=$(echo "${existing_json}" | jq -r --arg t "${d}" '.releases[]? | select(.tag == $t) | .downloaded_at // empty')
+      if [ -z "${existing_at}" ]; then
+        existing_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+      fi
+      rel_lines+=("{\"tag\":\"${d}\",\"downloaded_at\":\"${existing_at}\"}")
+    done < <(ls -1 "${releases_dir}" 2>/dev/null | sort -rV)
+
+    if [ ${#rel_lines[@]} -gt 0 ]; then
+      releases_json=$(printf '%s\n' "${rel_lines[@]}" | jq -s '.')
+    fi
   fi
 
+  local tmp_vf="${versions_file}.tmp.$$"
   jq -n \
     --arg app "${app}" \
     --arg active "${active}" \
     --argjson releases "${releases_json}" \
     '{"app": $app, "active": $active, "releases": $releases}' \
-    > "${versions_file}"
+    > "${tmp_vf}"
+  mv -f "${tmp_vf}" "${versions_file}"
 }
 
 # ---------------------------------------------------------------------------
@@ -508,8 +536,10 @@ sync_releases() {
   if [ -f "${TARGET_DIR}/.discovered_apps.json" ]; then
     discovered_count=$(jq '. | length' "${TARGET_DIR}/.discovered_apps.json" 2>/dev/null || echo 0)
   fi
-  echo "{\"status\":\"idle\",\"last_sync\":\"${ts}\",\"last_success\":true,\"discovered_count\":${discovered_count}}" > "${TARGET_DIR}/.sync_status.json" 2>/dev/null || true
-  rm -f "/tmp/sync.lock" 2>/dev/null || true
+  local tmp_status="${TARGET_DIR}/.sync_status.json.tmp.$$"
+  echo "{\"status\":\"idle\",\"last_sync\":\"${ts}\",\"last_success\":true,\"discovered_count\":${discovered_count}}" > "${tmp_status}" 2>/dev/null || true
+  mv -f "${tmp_status}" "${TARGET_DIR}/.sync_status.json" 2>/dev/null || true
+  rm -f "${SYNC_LOCK}" 2>/dev/null || true
 
   echo "[$(date -u +'%Y-%m-%d %H:%M:%SZ')] Sync complete."
 }
