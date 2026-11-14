@@ -140,6 +140,17 @@ artcraft.example.com {
 
 Caddy obtains a certificate automatically and forwards upstream headers unchanged.
 
+### ForwardAuth SSO (Authelia, Authentik, Cloudflare Access)
+
+If you protect your hub with an authenticating reverse proxy or ForwardAuth middleware (such as Authelia or Authentik), enable SSO integration by setting:
+
+```yaml
+environment:
+  - TRUST_FORWARD_AUTH=true
+```
+
+When enabled, requests containing verified proxy identity headers (`Remote-User`, `X-Forwarded-User`, or `X-Auth-Request-User`) are automatically authenticated as admin, bypassing manual password entry. Session cookies (`artcraft_session`) automatically enforce the `; Secure` flag when served over HTTPS (`X-Forwarded-Proto: https`).
+
 ---
 
 ## 🛡️ Security
@@ -153,11 +164,14 @@ Caddy obtains a certificate automatically and forwards upstream headers unchange
 When `ADMIN_PASSWORD` is configured:
 - **Edit Suite** and **Sync Releases** buttons are hidden by default on the dashboard and replaced by an **Unlock** lock icon button in the navigation bar. Clicking it prompts for the admin password, which is verified against `POST /api/verify-auth`.
 - Once authenticated, the **Edit Suite** and **Sync Releases** buttons appear, and the lock icon button transitions to **Lock**. Clicking the lock button again calls `POST /api/logout` to revoke the session, immediately locking the controls and re-hiding the management buttons.
-- Authentication issues a secure `HttpOnly; SameSite=Strict; Path=/api` session cookie (`artcraft_session`). Plaintext passwords are never stored in browser `sessionStorage` or `localStorage`, ensuring same-origin WebAssembly applications cannot inspect credentials.
+- Authentication issues a secure `HttpOnly; SameSite=Strict; Path=/api` session cookie (`artcraft_session`), with dynamic `; Secure` protection when accessed over HTTPS. Plaintext passwords are never stored in browser `sessionStorage` or `localStorage`, ensuring same-origin WebAssembly applications cannot inspect credentials.
 - State-changing API endpoints accept the `artcraft_session` cookie, an `X-Admin-Password: <password>` header, or an `Authorization: Bearer <session_or_password>` header.
 - Verification uses cryptographic pre-hashing with SHA-256 and constant-time comparison (`hmac.compare_digest`) to prevent timing and length-leak side-channels.
 - Failed authentication triggers non-blocking IP-based rate limiting (5 failed attempts per 60 seconds), returning `429 Too Many Requests` with a `Retry-After` header to prevent thread exhaustion DoS.
-- Mutating request bodies enforce a strict 64 KB `MAX_BODY_SIZE` limit to protect against pre- or post-auth memory exhaustion.
+- In-memory rate limiting and session stores are bounded with automatic LRU eviction (`MAX_TRACKED_IPS = 5000`, `MAX_SESSIONS = 1000`) to protect against memory exhaustion.
+- Mutating request bodies enforce a strict 64 KB `MAX_BODY_SIZE` limit.
+- CORS is restricted to same-origin by default; cross-origin access can be configured via `CORS_ORIGIN`.
+- Client IP resolution for rate limiting only trusts `X-Forwarded-For` from proxies defined in `TRUSTED_PROXIES` (defaults to loopback).
 - Locking the session via the dashboard calls `POST /api/logout` to revoke the server-side session token and clear the browser cookie.
 
 Endpoints guarded when `ADMIN_PASSWORD` is set:
@@ -180,7 +194,7 @@ Recommendations:
 - The Python API on port `5000` is meant to be reached only through Caddy. Do not publish port `5000` on the host.
 - Use a `GITHUB_TOKEN` with **no scopes** (public repos only need read access to release metadata).
 
-**Privacy note:** when no local preview image exists, the dashboard loads preview graphics from `getartcraft.com`. This means the browser makes requests to an external domain. Place local previews in `/data/previews/` to avoid this (see [Icons & previews](#icons--previews)).
+**Privacy note:** By default, `sync.sh` automatically downloads and caches high-resolution preview graphics directly into `/data/previews/${app}.webp` alongside vector icons in `/data/icons/` so the hub runs fully offline. If a local preview has not yet been synced, the dashboard falls back to loading preview graphics from `getartcraft.com`.
 
 ---
 
@@ -192,6 +206,9 @@ Recommendations:
 |----------|---------|-------------|
 | `GITHUB_TOKEN` | *(empty)* | GitHub personal access token. Without it: 60 requests/hour. With it: 5,000/hour. Create one under **Settings → Developer settings → Personal access tokens** (no scopes needed). |
 | `ADMIN_PASSWORD` | *(empty)* | Optional password to protect app management, release switching, and sync actions. When empty or unset, management is unrestricted. |
+| `TRUST_FORWARD_AUTH` | `false` | When `true`, trusts ForwardAuth reverse proxy headers (`Remote-User`, `X-Forwarded-User`, `X-Auth-Request-User`) from Authelia, Authentik, Traefik, or Cloudflare Access for seamless SSO admin access. |
+| `CORS_ORIGIN` | *(empty)* | Permitted CORS origin (e.g. `https://hub.example.com` or `*`). Locked to same-origin by default. |
+| `TRUSTED_PROXIES` | `127.0.0.1,::1,localhost` | Comma-separated list of trusted upstream reverse proxy IPs for client IP rate-limiting and secure cookie checks. |
 | `SYNC_CRON` | `0 0 * * *` | Standard 5-field cron expression for release checks. Examples: `*/30 * * * *` (every 30 min), `0 */6 * * *` (every 6 hours). |
 | `TZ` | `UTC` | Timezone for the cron schedule (e.g. `Europe/Athens`). |
 | `MAX_RELEASES` | `3` | Number of release versions kept per app. Older inactive releases are pruned automatically. |
@@ -222,7 +239,7 @@ An app can be added only if its GitHub repository publishes **releases** that in
 
 During each sync (manual or cron-scheduled), ArtCraft Hub cross-checks [getartcraft.com](https://getartcraft.com) and the `storytold` GitHub organization for newly published ArtCraft apps not yet in your `catalog.json`:
 
-- **Top Banner Alert:** when a new app is detected (e.g. `AniCraft`, `MaterialCraft`), an alert banner appears at the top of the dashboard.
+- **Top Banner Alert:** when a new app is detected (e.g. `MaterialCraft`), an alert banner appears at the top of the dashboard. Candidate applications without WebAssembly builds are automatically filtered out.
 - **1-Click Addition:** click **+ Add to Suite** to automatically register the app with curated metadata and begin downloading its release immediately.
 - **Admin Authentication:** if `ADMIN_PASSWORD` is configured, clicking add will prompt for the admin password to unlock management first.
 
@@ -299,7 +316,7 @@ The management API (port `5000` inside the container) supports automation:
 | `PUT` | `/api/catalog/{app}` | Update metadata |
 | `PATCH` | `/api/catalog/{app}/visibility` | Show/hide. Body: `{ "visible": false }` |
 | `DELETE` | `/api/catalog/{app}` | Delete the catalog entry **and purge all downloaded data** |
-| `POST` | `/api/sync` | Trigger a background release check |
+| `POST` | `/api/sync` | Trigger a background release check. Optional JSON body: `{ "app": "photocraft" }` for targeted single-app sync |
 | `GET` | `/api/discover` | List upstream discovered ArtCraft apps not yet in catalog (use `?refresh=true` for live check) |
 | `POST` | `/api/{app}/switch/{tag}` | Atomically repoint the `current` symlink to another downloaded release |
 
@@ -313,6 +330,7 @@ The management API (port `5000` inside the container) supports automation:
 
 - Switch any app between downloaded releases from its version pill on the dashboard. No restart needed.
 - A switch atomically repoints the `/data/{app}/current` symlink.
+- **WASM Version Cache-Busting:** Launch links automatically append `?v=${activeTag}` and update dynamically in the DOM on version switches, ensuring browsers do not serve stale or mismatched cached `.wasm` and `.js` bundles.
 - Switch from the command line:
   ```bash
   docker exec -it artcraft-hub switch-version.sh photocraft v0.17.0
@@ -332,7 +350,11 @@ The management API (port `5000` inside the container) supports automation:
 ### Manual sync
 
 ```bash
+# Sync all applications in catalog (full suite sync)
 docker exec artcraft-hub sync.sh
+
+# Targeted single-app sync (fast, ~2-3 seconds)
+docker exec artcraft-hub sync.sh photocraft
 ```
 
 ### Logs
