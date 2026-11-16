@@ -28,4 +28,6 @@ venv/
 
 # Scratch & temporary files
 scratch/
+*.etag
+.etag
 

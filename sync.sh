@@ -353,18 +353,50 @@ discover_new_apps() {
 
   # 2. If getartcraft.com returned nothing (offline/blocked), fallback to GitHub organization query
   if [ ${#candidates[@]} -eq 0 ]; then
-    local gh_repos
-    gh_repos=$(curl -sfL --retry 2 --max-time 10 "${auth_header[@]}" \
+    local disc_etag_file="${TARGET_DIR}/.discovery_etag"
+    local disc_etag_hdr=()
+    if [ -s "${disc_etag_file}" ]; then
+      local cached_disc_etag
+      cached_disc_etag=$(cat "${disc_etag_file}" 2>/dev/null | tr -d '\r\n')
+      [ -n "${cached_disc_etag}" ] && disc_etag_hdr=(-H "If-None-Match: ${cached_disc_etag}")
+    fi
+
+    local disc_hdr_tmp="/tmp/gh_disc_hdr_$$.tmp"
+    local disc_body_tmp="/tmp/gh_disc_body_$$.tmp"
+    local disc_code
+    disc_code=$(curl -s --retry 2 --max-time 10 \
+      -w "%{http_code}" \
+      -D "${disc_hdr_tmp}" \
+      -o "${disc_body_tmp}" \
+      "${auth_header[@]}" \
+      "${disc_etag_hdr[@]}" \
       -H "Accept: application/vnd.github+json" \
       -H "X-GitHub-Api-Version: 2022-11-28" \
-      "https://api.github.com/orgs/storytold/repos?type=public&per_page=100" 2>/dev/null || echo "[]")
-    if [ -n "${gh_repos}" ] && [ "${gh_repos}" != "[]" ]; then
-      local repo_apps
-      repo_apps=$(echo "${gh_repos}" | jq -r '.[]? | select(.name | test("^[a-z]+craft$|^craft-anything$")) | select(.name | test("^(artcraft|crafthub)$") | not) | .name' 2>/dev/null || true)
-      while IFS= read -r app || [ -n "$app" ]; do
-        [[ -z "$app" ]] && continue
-        candidates+=("${app}")
-      done <<< "${repo_apps}"
+      "https://api.github.com/orgs/storytold/repos?type=public&per_page=100" 2>/dev/null || echo "000")
+
+    if [ "${disc_code}" = "304" ]; then
+      echo "  [DISCOVER] GitHub org repos unmodified (304 Not Modified)"
+      rm -f "${disc_hdr_tmp}" "${disc_body_tmp}" 2>/dev/null || true
+    elif [ "${disc_code}" = "200" ]; then
+      local new_disc_etag
+      new_disc_etag=$(grep -i '^etag:' "${disc_hdr_tmp}" 2>/dev/null | tr -d '\r\n' | sed -e 's/^[Ee][Tt][Aa][Gg]:[[:space:]]*//' || true)
+      if [ -n "${new_disc_etag}" ]; then
+        echo "${new_disc_etag}" > "${disc_etag_file}.tmp.$$" 2>/dev/null || true
+        mv -f "${disc_etag_file}.tmp.$$" "${disc_etag_file}" 2>/dev/null || true
+      fi
+      local gh_repos
+      gh_repos=$(cat "${disc_body_tmp}" 2>/dev/null || echo "[]")
+      rm -f "${disc_hdr_tmp}" "${disc_body_tmp}" 2>/dev/null || true
+      if [ -n "${gh_repos}" ] && [ "${gh_repos}" != "[]" ]; then
+        local repo_apps
+        repo_apps=$(echo "${gh_repos}" | jq -r '.[]? | select(.name | test("^[a-z]+craft$|^craft-anything$")) | select(.name | test("^(artcraft|crafthub)$") | not) | .name' 2>/dev/null || true)
+        while IFS= read -r app || [ -n "$app" ]; do
+          [[ -z "$app" ]] && continue
+          candidates+=("${app}")
+        done <<< "${repo_apps}"
+      fi
+    else
+      rm -f "${disc_hdr_tmp}" "${disc_body_tmp}" 2>/dev/null || true
     fi
   fi
 
@@ -506,17 +538,51 @@ sync_releases() {
     # Run migration from old layout if needed
     migrate_if_needed "${reponame}"
 
+    mkdir -p "${app_dir}"
+
+    local etag_file="${app_dir}/.etag"
+    local etag_header=()
+    if [ -s "${etag_file}" ] && [ -e "${app_dir}/current" ] && [ -f "${app_dir}/versions.json" ]; then
+      local cached_etag
+      cached_etag=$(cat "${etag_file}" 2>/dev/null | tr -d '\r\n')
+      if [ -n "${cached_etag}" ]; then
+        etag_header=(-H "If-None-Match: ${cached_etag}")
+      fi
+    fi
+
     local api_url="https://api.github.com/repos/${repo_path}/releases/latest"
-    local resp
-    resp=$(curl -s --retry 3 --retry-delay 5 \
+    local hdr_tmp="/tmp/gh_hdr_${reponame}_$$.tmp"
+    local body_tmp="/tmp/gh_body_${reponame}_$$.tmp"
+
+    local http_code
+    http_code=$(curl -s --retry 3 --retry-delay 5 \
+      -w "%{http_code}" \
+      -D "${hdr_tmp}" \
+      -o "${body_tmp}" \
       "${auth_header[@]}" \
+      "${etag_header[@]}" \
       -H "Accept: application/vnd.github+json" \
       -H "X-GitHub-Api-Version: 2022-11-28" \
-      "${api_url}" 2>/dev/null || echo '{}')
+      "${api_url}" 2>/dev/null || echo "000")
+
+    # 304 Not Modified: zero rate-limit consumed, releases are completely up to date
+    if [ "${http_code}" = "304" ]; then
+      echo "  [UP-TO-DATE] ${reponame} (304 Not Modified)"
+      rm -f "${hdr_tmp}" "${body_tmp}" 2>/dev/null || true
+      update_versions_json "${reponame}"
+      continue
+    fi
+
+    local resp
+    resp=$(cat "${body_tmp}" 2>/dev/null || echo '{}')
+
+    local new_etag
+    new_etag=$(grep -i '^etag:' "${hdr_tmp}" 2>/dev/null | tr -d '\r\n' | sed -e 's/^[Ee][Tt][Aa][Gg]:[[:space:]]*//' || true)
+    rm -f "${hdr_tmp}" "${body_tmp}" 2>/dev/null || true
 
     local err_msg
     err_msg=$(echo "${resp}" | jq -r '.message // empty' 2>/dev/null || true)
-    if [[ "${err_msg}" =~ [Rr]ate\ limit ]]; then
+    if [[ "${err_msg}" =~ [Rr]ate\ limit ]] || [ "${http_code}" = "429" ] || { [ "${http_code}" = "403" ] && [[ "${err_msg}" =~ [Aa]PI\ rate\ limit ]]; }; then
       echo "  [ERROR] GitHub API rate limit exceeded for ${repo_path}! Set GITHUB_TOKEN in docker-compose.yml to increase the limit from 60 to 5,000 req/hr." >&2
       any_error=true
       rate_limited=true
@@ -541,6 +607,10 @@ sync_releases() {
       [ -f "${app_dir}/active.txt" ] || echo "${tag}" > "${app_dir}/active.txt"
       if [ ! -L "${app_dir}/current" ]; then
         ln -sfn "releases/${tag}" "${app_dir}/current"
+      fi
+      if [ -n "${new_etag}" ]; then
+        echo "${new_etag}" > "${etag_file}.tmp.$$" 2>/dev/null || true
+        mv -f "${etag_file}.tmp.$$" "${etag_file}" 2>/dev/null || true
       fi
       update_versions_json "${reponame}"
       continue
@@ -589,6 +659,12 @@ sync_releases() {
       # Update active symlink to this new release
       ln -sfn "releases/${tag}" "${app_dir}/current"
       echo "${tag}" > "${app_dir}/active.txt"
+
+      # Save cached ETag now that release is verified on disk
+      if [ -n "${new_etag}" ]; then
+        echo "${new_etag}" > "${etag_file}.tmp.$$" 2>/dev/null || true
+        mv -f "${etag_file}.tmp.$$" "${etag_file}" 2>/dev/null || true
+      fi
 
       # Update metadata
       update_versions_json "${reponame}"
