@@ -1219,6 +1219,14 @@
         }
       }
 
+      function restoreOpenVersionMenu() {
+        if (!openMenuAppKey) return;
+        const matchingChip = document.getElementById(`chip-${openMenuAppKey}`);
+        if (matchingChip && (matchingChip.classList.contains('has-dropdown') || (matchingChip.classList.contains('active-version-btn') && !matchingChip.classList.contains('single-version')))) {
+          matchingChip.click();
+        }
+      }
+
       // 2. Main Tools Section (bottom)
       if (currentCategory === 'pinned') {
         // If "Pinned" tab is active, only show pinned section
@@ -1239,6 +1247,7 @@
             </div>
           `;
         }
+        restoreOpenVersionMenu();
         return;
       }
 
@@ -1284,12 +1293,7 @@
       }
       appsGrid.appendChild(appsFragment);
 
-      if (openMenuAppKey) {
-        const matchingChip = document.getElementById(`chip-${openMenuAppKey}`);
-        if (matchingChip && matchingChip.classList.contains('has-dropdown')) {
-          matchingChip.click();
-        }
-      }
+      restoreOpenVersionMenu();
     }
 
     function updateCategoryCounts() {
@@ -1425,16 +1429,18 @@
         }
       } catch (err) {
         console.error('Failed to load manifest:', err);
-        appsGrid.innerHTML = `
-          <div class="empty-state">
-            <div class="empty-icon">⚠️</div>
-            <h3 class="empty-title">Unable to Connect to Hub API</h3>
-            <p class="empty-desc">
-              Could not communicate with the local sidecar API at <code>/api/manifest</code>. Make sure the container is healthy.
-            </p>
-            <button class="btn-sync" onclick="fetchManifest()">Retry</button>
-          </div>
-        `;
+        if (rawApps.length === 0) {
+          appsGrid.innerHTML = `
+            <div class="empty-state">
+              <div class="empty-icon">⚠️</div>
+              <h3 class="empty-title">Unable to Connect to Hub API</h3>
+              <p class="empty-desc">
+                Could not communicate with the local sidecar API at <code>/api/manifest</code>. Make sure the container is healthy.
+              </p>
+              <button class="btn-sync" onclick="fetchManifest()">Retry</button>
+            </div>
+          `;
+        }
       } finally {
         isFetchingManifest = false;
       }
