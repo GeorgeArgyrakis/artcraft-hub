@@ -582,22 +582,68 @@ sync_releases() {
 
     local err_msg
     err_msg=$(echo "${resp}" | jq -r '.message // empty' 2>/dev/null || true)
+    local is_rl=false
     if [[ "${err_msg}" =~ [Rr]ate\ limit ]] || [ "${http_code}" = "429" ] || { [ "${http_code}" = "403" ] && [[ "${err_msg}" =~ [Aa]PI\ rate\ limit ]]; }; then
-      echo "  [ERROR] GitHub API rate limit exceeded for ${repo_path}! Set GITHUB_TOKEN in docker-compose.yml to increase the limit from 60 to 5,000 req/hr." >&2
-      any_error=true
-      rate_limited=true
-      last_error="GitHub API rate limit exceeded (60 req/hr). Set GITHUB_TOKEN in docker-compose.yml to raise limit to 5,000 req/hr."
-      continue
+      is_rl=true
     fi
 
-    local tag
-    tag=$(echo "${resp}" | jq -r '.tag_name // empty')
+    local tag=""
+    local download_url=""
+    local releases_dir="${app_dir}/releases"
+
+    # If GitHub API is rate-limited, fallback to web HTML release check (zero rate-limit)
+    if [ "${is_rl}" = true ]; then
+      echo "  [INFO] GitHub API rate-limited for ${repo_path}. Checking web release fallback..."
+      local web_tag
+      web_tag=$(curl -sI --max-time 10 "https://github.com/${repo_path}/releases/latest" 2>/dev/null | grep -i '^location:' | tail -n 1 | sed -nE 's|^[Ll]ocation:.*\/tag\/([^/?#\r\n]+).*|\1|p' | tr -d '\r\n')
+
+      if [ -n "${web_tag}" ]; then
+        local tag_dir="${releases_dir}/${web_tag}"
+        if [ -d "${tag_dir}" ]; then
+          echo "  [OK] ${reponame} already has ${web_tag} (verified via web fallback)"
+          [ -f "${app_dir}/active.txt" ] || echo "${web_tag}" > "${app_dir}/active.txt"
+          if [ ! -L "${app_dir}/current" ]; then
+            ln -sfn "releases/${web_tag}" "${app_dir}/current"
+          fi
+          update_versions_json "${reponame}"
+          continue
+        fi
+
+        # New or missing version: resolve web zip asset URL via expanded_assets HTML
+        local web_asset_rel
+        web_asset_rel=$(curl -sfL --max-time 15 "https://github.com/${repo_path}/releases/expanded_assets/${web_tag}" 2>/dev/null | grep -oE '/[A-Za-z0-9_-]+/[A-Za-z0-9_-]+/releases/download/[^"'\''<>]+web[^"'\''<>]+\.zip' | head -n 1 || true)
+        if [ -n "${web_asset_rel}" ]; then
+          tag="${web_tag}"
+          download_url="https://github.com${web_asset_rel}"
+        fi
+      fi
+
+      if [ -z "${download_url}" ] && [ -z "${tag}" ]; then
+        # If uninstalled and cannot resolve download URL, flag rate-limit error
+        if [ ! -e "${app_dir}/current" ]; then
+          echo "  [ERROR] GitHub API rate limit exceeded for ${repo_path}! Set GITHUB_TOKEN in docker-compose.yml to increase the limit from 60 to 5,000 req/hr." >&2
+          any_error=true
+          rate_limited=true
+          last_error="GitHub API rate limit exceeded (60 req/hr). Set GITHUB_TOKEN in docker-compose.yml to raise limit to 5,000 req/hr."
+          continue
+        else
+          # App is already installed on disk, so keep existing version safely
+          echo "  [OK] ${reponame} keeping installed version on disk (API rate limited)"
+          update_versions_json "${reponame}"
+          continue
+        fi
+      fi
+    fi
+
+    if [ -z "${tag}" ]; then
+      tag=$(echo "${resp}" | jq -r '.tag_name // empty' 2>/dev/null || true)
+    fi
+
     if [ -z "${tag}" ]; then
       echo "  [SKIP] No release found for ${repo_path}"
       continue
     fi
 
-    local releases_dir="${app_dir}/releases"
     local tag_dir="${releases_dir}/${tag}"
 
     # Already have this version
@@ -619,11 +665,12 @@ sync_releases() {
     echo "  [NEW] ${reponame}: new release ${tag}"
 
     # Find web zip asset
-    local download_url
-    download_url=$(echo "${resp}" | jq -r '
-      .assets[]
-      | select(.name | ascii_downcase | test("web.*\\.zip$"))
-      | .browser_download_url' | head -n 1)
+    if [ -z "${download_url}" ]; then
+      download_url=$(echo "${resp}" | jq -r '
+        .assets[]?
+        | select(.name | ascii_downcase | test("web.*\\.zip$"))
+        | .browser_download_url' 2>/dev/null | head -n 1)
+    fi
 
     if [ -z "${download_url}" ]; then
       echo "  [WARN] No WebAssembly (*web*.zip) asset found for ${reponame} ${tag}. Skipping."
