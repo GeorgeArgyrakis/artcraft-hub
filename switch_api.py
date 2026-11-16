@@ -1398,6 +1398,8 @@ class SwitchAPIHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
         self.send_header("X-Auth-Required", "true" if is_auth_required() else "false")
         req_origin = self.headers.get("Origin") if hasattr(self, "headers") and self.headers else None
         for k, v in get_cors_headers(req_origin).items():

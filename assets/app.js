@@ -1371,7 +1371,7 @@
        ------------------------------------------------------------- */
     async function fetchManifest() {
       try {
-        const res = await fetch('/api/manifest');
+        const res = await fetch('/api/manifest', { cache: 'no-store' });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
 
@@ -1425,7 +1425,7 @@
 
     async function checkStatus() {
       try {
-        const res = await fetch('/api/status');
+        const res = await fetch('/api/status', { cache: 'no-store' });
         if (res.ok) {
           const sys = await res.json();
           updateSystemStatus(sys);
@@ -1451,13 +1451,16 @@
       if (!sys) return;
       updateRateLimitBanner(sys);
 
-      const active = sys.is_syncing || sys.status === 'syncing';
+      const active = Boolean(sys.is_syncing || sys.status === 'syncing');
       isSyncing = active;
 
       if (active) {
         btnSyncAll.disabled = true;
         btnSyncAll.classList.add('spinning');
         btnSyncLabel.textContent = 'Syncing...';
+        if (!syncPollTimer) {
+          startSyncPolling();
+        }
       } else {
         btnSyncAll.disabled = false;
         btnSyncAll.classList.remove('spinning');
@@ -1507,6 +1510,7 @@
           isSyncing = true;
           updateSystemStatus({ is_syncing: true });
           startSyncPolling();
+          renderGrid();
         } else {
           showToast('Sync Alert', data.error || 'Could not start sync.', 'error');
           isSyncing = false;
@@ -1521,15 +1525,22 @@
 
     let isPollingCheck = false;
     async function pollSyncStatus() {
-      if (!isSyncing || isPollingCheck) return;
+      if (isPollingCheck) return;
       isPollingCheck = true;
 
       try {
-        const res = await fetch('/api/status');
+        const res = await fetch('/api/status', { cache: 'no-store' });
         if (res.ok) {
           const sys = await res.json();
-          const stillRunning = sys.is_syncing || sys.status === 'syncing';
-          if (!stillRunning) {
+          const stillRunning = Boolean(sys.is_syncing || sys.status === 'syncing');
+
+          if (stillRunning) {
+            updateSystemStatus(sys);
+            const installedCount = rawApps.filter(a => a.releases && a.releases.length > 0).length;
+            if (typeof sys.apps_count === 'number' && sys.apps_count > installedCount) {
+              await fetchManifest();
+            }
+          } else {
             // Completely finished!
             isSyncing = false;
             stopSyncPolling();
@@ -2137,4 +2148,11 @@
 
     applyTheme(currentTheme, false);
     fetchManifest();
+
+    // Periodic background status check when idle (e.g. catches background cron syncs)
+    setInterval(() => {
+      if (!isSyncing) {
+        checkStatus();
+      }
+    }, 30000);
 
