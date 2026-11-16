@@ -379,7 +379,7 @@ discover_new_apps() {
       rm -f "${disc_hdr_tmp}" "${disc_body_tmp}" 2>/dev/null || true
     elif [ "${disc_code}" = "200" ]; then
       local new_disc_etag
-      new_disc_etag=$(grep -i '^etag:' "${disc_hdr_tmp}" 2>/dev/null | tr -d '\r\n' | sed -e 's/^[Ee][Tt][Aa][Gg]:[[:space:]]*//' || true)
+      new_disc_etag=$(grep -i '^etag:' "${disc_hdr_tmp}" 2>/dev/null | tail -n 1 | tr -d '\r\n' | sed -e 's/^[Ee][Tt][Aa][Gg]:[[:space:]]*//' || true)
       if [ -n "${new_disc_etag}" ]; then
         echo "${new_disc_etag}" > "${disc_etag_file}.tmp.$$" 2>/dev/null || true
         mv -f "${disc_etag_file}.tmp.$$" "${disc_etag_file}" 2>/dev/null || true
@@ -577,7 +577,7 @@ sync_releases() {
     resp=$(cat "${body_tmp}" 2>/dev/null || echo '{}')
 
     local new_etag
-    new_etag=$(grep -i '^etag:' "${hdr_tmp}" 2>/dev/null | tr -d '\r\n' | sed -e 's/^[Ee][Tt][Aa][Gg]:[[:space:]]*//' || true)
+    new_etag=$(grep -i '^etag:' "${hdr_tmp}" 2>/dev/null | tail -n 1 | tr -d '\r\n' | sed -e 's/^[Ee][Tt][Aa][Gg]:[[:space:]]*//' || true)
     rm -f "${hdr_tmp}" "${body_tmp}" 2>/dev/null || true
 
     local err_msg
