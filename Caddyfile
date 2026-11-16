@@ -15,9 +15,14 @@
         X-Frame-Options "SAMEORIGIN"
         Referrer-Policy "strict-origin-when-cross-origin"
         Permissions-Policy "camera=(), microphone=(), geolocation=()"
-        Cache-Control "no-cache"
         -Server
     }
+
+    # Static assets and HTML dashboard default cache policy (exclude API)
+    @not_api {
+        not path /api*
+    }
+    header @not_api Cache-Control "no-cache"
 
     # Correct MIME type for .wasm files
     @wasm {
@@ -47,6 +52,10 @@
 
     # Version-switch API — proxy to Python sidecar
     handle /api/* {
+        header {
+            Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
+            Pragma "no-cache"
+        }
         reverse_proxy localhost:5000
     }
 

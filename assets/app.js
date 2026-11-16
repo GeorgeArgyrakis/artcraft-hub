@@ -1144,6 +1144,10 @@
        Rendering & Filtering
        ------------------------------------------------------------- */
     function renderGrid() {
+      // Preserve open version menu across re-renders
+      const openMenuCard = document.querySelector('.app-card.has-menu-open');
+      const openMenuAppKey = openMenuCard ? openMenuCard.dataset.app : null;
+
       pinnedGrid.innerHTML = '';
       appsGrid.innerHTML = '';
 
@@ -1279,6 +1283,13 @@
         appsFragment.appendChild(buildAddAppCard());
       }
       appsGrid.appendChild(appsFragment);
+
+      if (openMenuAppKey) {
+        const matchingChip = document.getElementById(`chip-${openMenuAppKey}`);
+        if (matchingChip && matchingChip.classList.contains('has-dropdown')) {
+          matchingChip.click();
+        }
+      }
     }
 
     function updateCategoryCounts() {
@@ -1369,7 +1380,11 @@
     /* -------------------------------------------------------------
        API Calls
        ------------------------------------------------------------- */
+    let isFetchingManifest = false;
     async function fetchManifest() {
+      if (isFetchingManifest) return;
+      isFetchingManifest = true;
+
       try {
         const res = await fetch('/api/manifest', { cache: 'no-store' });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1420,10 +1435,13 @@
             <button class="btn-sync" onclick="fetchManifest()">Retry</button>
           </div>
         `;
+      } finally {
+        isFetchingManifest = false;
       }
     }
 
     async function checkStatus() {
+      if (isSyncing) return;
       try {
         const res = await fetch('/api/status', { cache: 'no-store' });
         if (res.ok) {
@@ -1536,7 +1554,7 @@
 
           if (stillRunning) {
             updateSystemStatus(sys);
-            const installedCount = rawApps.filter(a => a.releases && a.releases.length > 0).length;
+            const installedCount = rawApps.filter(a => Array.isArray(a.releases) && a.releases.length > 0).length;
             if (typeof sys.apps_count === 'number' && sys.apps_count > installedCount) {
               await fetchManifest();
             }
