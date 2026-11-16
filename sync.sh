@@ -364,7 +364,7 @@ discover_new_apps() {
     local disc_hdr_tmp="/tmp/gh_disc_hdr_$$.tmp"
     local disc_body_tmp="/tmp/gh_disc_body_$$.tmp"
     local disc_code
-    disc_code=$(curl -s --retry 2 --max-time 10 \
+    disc_code=$(curl -s --max-time 10 \
       -w "%{http_code}" \
       -D "${disc_hdr_tmp}" \
       -o "${disc_body_tmp}" \
@@ -555,7 +555,7 @@ sync_releases() {
     local body_tmp="/tmp/gh_body_${reponame}_$$.tmp"
 
     local http_code
-    http_code=$(curl -s --retry 3 --retry-delay 5 \
+    http_code=$(curl -s --max-time 10 \
       -w "%{http_code}" \
       -D "${hdr_tmp}" \
       -o "${body_tmp}" \
@@ -611,7 +611,7 @@ sync_releases() {
 
         # New or missing version: resolve web zip asset URL via expanded_assets HTML
         local web_asset_rel
-        web_asset_rel=$(curl -sfL --max-time 15 "https://github.com/${repo_path}/releases/expanded_assets/${web_tag}" 2>/dev/null | grep -oE '/[A-Za-z0-9_-]+/[A-Za-z0-9_-]+/releases/download/[^"'\''<>]+web[^"'\''<>]+\.zip' | head -n 1 || true)
+        web_asset_rel=$(curl -sfL --max-time 15 "https://github.com/${repo_path}/releases/expanded_assets/${web_tag}" 2>/dev/null | grep -oiE '/[A-Za-z0-9_-]+/[A-Za-z0-9_-]+/releases/download/[^"'\''<>]+web[^"'\''<>]+\.zip' | head -n 1 || true)
         if [ -n "${web_asset_rel}" ]; then
           tag="${web_tag}"
           download_url="https://github.com${web_asset_rel}"
