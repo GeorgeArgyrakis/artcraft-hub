@@ -73,17 +73,18 @@ mkdir -p /etc/supercronic
 echo "${CRON_SCHEDULE} /usr/local/bin/sync.sh >> /proc/1/fd/1 2>&1" > "${CRONTAB_FILE}"
 echo "[INFO] Cron schedule: ${CRON_SCHEDULE}"
 
-# Start version-switch API in background
-echo "[INFO] Starting switch API on :5000..."
-python3 /usr/local/bin/switch_api.py &
-
-# Fetch official vector master icons in background
-if [ -f "/usr/local/bin/fetch-icons.sh" ]; then
-  echo "[INFO] Synchronizing official vector icons in background..."
-  /usr/local/bin/fetch-icons.sh &
-fi
+# Start version-switch API with auto-restart supervisor in background
+(
+  while true; do
+    echo "[INFO] Starting switch API on :5000..."
+    python3 /usr/local/bin/switch_api.py || true
+    echo "[WARN] switch_api.py exited. Restarting in 2 seconds..."
+    sleep 2
+  done
+) &
 
 # Run initial sync in the background so Caddy starts immediately
+# (sync.sh automatically fetches icons and previews for all applications)
 echo "[INFO] Running initial sync in background..."
 /usr/local/bin/sync.sh &
 

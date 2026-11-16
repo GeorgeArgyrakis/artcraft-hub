@@ -42,15 +42,15 @@ fetch_single_icon() {
 
   local success=false
   for url in "${urls[@]}"; do
-    if curl -sfL --retry 2 "${auth_header[@]}" "${url}" -o "${dest}.tmp" 2>/dev/null; then
-      if [ -s "${dest}.tmp" ]; then
-        mv "${dest}.tmp" "${dest}"
+    if curl -sfL --retry 2 "${auth_header[@]}" "${url}" -o "${dest}.tmp.$$" 2>/dev/null; then
+      if [ -s "${dest}.tmp.$$" ]; then
+        mv -f "${dest}.tmp.$$" "${dest}"
         echo "  ✓ Saved ${app}.svg (${url})"
         success=true
         break
       fi
     fi
-    rm -f "${dest}.tmp"
+    rm -f "${dest}.tmp.$$" 2>/dev/null || true
   done
 
   if [ "${success}" = false ]; then

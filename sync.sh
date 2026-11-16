@@ -218,15 +218,15 @@ sync_app_icon() {
 
   local fetched=false
   for url in "${icon_urls[@]}"; do
-    if curl -sfL --retry 2 "${auth_header[@]}" "${url}" -o "${icon_dest}.tmp" 2>/dev/null; then
-      if [ -s "${icon_dest}.tmp" ]; then
-        mv "${icon_dest}.tmp" "${icon_dest}"
+    if curl -sfL --retry 2 "${auth_header[@]}" "${url}" -o "${icon_dest}.tmp.$$" 2>/dev/null; then
+      if [ -s "${icon_dest}.tmp.$$" ]; then
+        mv -f "${icon_dest}.tmp.$$" "${icon_dest}"
         echo "  [ICON] Saved official icon to ${icon_dest}"
         fetched=true
         break
       fi
     fi
-    rm -f "${icon_dest}.tmp"
+    rm -f "${icon_dest}.tmp.$$" 2>/dev/null || true
   done
 
   if [ "${fetched}" = false ]; then

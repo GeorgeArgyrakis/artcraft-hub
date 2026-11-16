@@ -706,7 +706,8 @@
              alt="${escapeHtml(meta.title)} Interface Preview" 
              class="artcraft-preview-img" 
              loading="lazy" 
-             decoding="async"
+             decoding="async" 
+             crossorigin="anonymous"
              onerror="if (this.dataset.triedOnline !== 'true') { this.dataset.triedOnline = 'true'; this.src = 'https://getartcraft.com/images/apps/${escapeHtml(appInfo.app)}/${appInfo.app === 'filmcraft' ? 'color' : 'hero'}.webp'; } else { this.style.display='none'; this.nextElementSibling.style.display='block'; }">
         <div class="artcraft-preview-fallback" style="display: none; width: 100%; height: 100%;">
           ${previewSvg}
@@ -1182,8 +1183,8 @@
 
       // Sort both lists (by official ArtCraft lineup number in ArtCraft theme, or alphabetically in Glass theme)
       if (currentTheme === 'artcraft') {
-        pinnedList.sort((a, b) => (getAppMeta(a.app).num || '99').localeCompare(getAppMeta(b.app).num || '99'));
-        unpinnedList.sort((a, b) => (getAppMeta(a.app).num || '99').localeCompare(getAppMeta(b.app).num || '99'));
+        pinnedList.sort((a, b) => (getAppMeta(a.app).num || '99').localeCompare(getAppMeta(b.app).num || '99', undefined, { numeric: true }));
+        unpinnedList.sort((a, b) => (getAppMeta(a.app).num || '99').localeCompare(getAppMeta(b.app).num || '99', undefined, { numeric: true }));
       } else {
         pinnedList.sort((a, b) => getAppMeta(a.app).title.localeCompare(getAppMeta(b.app).title));
         unpinnedList.sort((a, b) => getAppMeta(a.app).title.localeCompare(getAppMeta(b.app).title));

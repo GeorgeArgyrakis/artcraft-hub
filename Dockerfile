@@ -62,6 +62,6 @@ ENV SYNC_CRON="0 0 * * *" \
 EXPOSE 80
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD curl -f http://localhost:80/ || exit 1
+  CMD curl -sf http://localhost:80/api/status >/dev/null || exit 1
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

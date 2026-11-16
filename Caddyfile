@@ -9,7 +9,7 @@
     # Security headers (hardened + required for SharedArrayBuffer / WASM threads)
     header {
         Cross-Origin-Opener-Policy "same-origin"
-        Cross-Origin-Embedder-Policy "require-corp"
+        Cross-Origin-Embedder-Policy "credentialless"
         Cross-Origin-Resource-Policy "cross-origin"
         X-Content-Type-Options "nosniff"
         X-Frame-Options "SAMEORIGIN"
@@ -49,6 +49,24 @@
     handle /api/* {
         reverse_proxy localhost:5000
     }
+
+    # Canonical trailing slash redirect for top-level application slugs (e.g. /photocraft → /photocraft/):
+    # This prevents the browser from resolving relative WASM assets (./pkg/...) against root /
+    @app_no_slash {
+        not path /
+        not path /styles.css
+        not path /app.js
+        not path /logo.svg
+        not path /logo.png
+        not path /favicon.ico
+        not path /api*
+        not path /assets*
+        not path /icons*
+        not path /previews*
+        not path /images*
+        path_regexp noslash ^/([A-Za-z0-9_-]+)$
+    }
+    redir @app_no_slash /{re.noslash.1}/ 308
 
     # Fix wasm-bindgen crate prefix quirk: /{app}/app/snippets/* → /{app}/current/snippets/*
     @snippet_quirk {
