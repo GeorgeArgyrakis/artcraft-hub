@@ -663,6 +663,26 @@ class TestAppDiscovery(unittest.TestCase):
             # anicraft is identified, but flagged webReady=False (no wasm version yet)
             self.assertFalse(disc_map["anicraft"].get("webReady", True))
 
+    def test_upstream_web_ready_dynamic_detection(self):
+        from unittest.mock import patch, MagicMock
+        # When AniCraft only has desktop assets, webReady is False
+        desktop_only_json = json.dumps({"assets": [{"name": "anicraft-0.2.1.AppImage"}]}).encode("utf-8")
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = desktop_only_json
+            mock_resp.__enter__.return_value = mock_resp
+            mock_urlopen.return_value = mock_resp
+            self.assertFalse(switch_api.check_upstream_web_ready("anicraft"))
+
+        # When AniCraft later publishes a WebAssembly asset, webReady dynamically becomes True
+        wasm_ready_json = json.dumps({"assets": [{"name": "anicraft-web-0.3.0.zip"}]}).encode("utf-8")
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = wasm_ready_json
+            mock_resp.__enter__.return_value = mock_resp
+            mock_urlopen.return_value = mock_resp
+            self.assertTrue(switch_api.check_upstream_web_ready("anicraft"))
+
 
 class TestSecurityAndConcurrency(unittest.TestCase):
     """Test proxy spoofing defense, bounded memory, and catalog management edge cases."""

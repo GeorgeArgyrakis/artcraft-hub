@@ -445,9 +445,25 @@ discover_new_apps() {
       sync_app_icon "storytold/${app}" "${app}"
       local meta
       meta=$(get_app_metadata "${app}")
-      local is_wr
-      is_wr=$(echo "${meta}" | jq -r '.webReady // true')
-      if [ "${is_wr}" = "false" ]; then
+
+      # Dynamically detect if latest GitHub release has a WebAssembly asset (*web*.zip)
+      local is_wr=false
+      local rel_json
+      rel_json=$(curl -s --max-time 6 "${auth_header[@]}" \
+        -H "Accept: application/vnd.github+json" \
+        -H "X-GitHub-Api-Version: 2022-11-28" \
+        "https://api.github.com/repos/storytold/${app}/releases/latest" 2>/dev/null || echo "{}")
+      if echo "${rel_json}" | jq -e '.assets[]? | select(.name | ascii_downcase | test("web.*\\.zip$"))' >/dev/null 2>&1; then
+        is_wr=true
+      else
+        is_wr=$(echo "${meta}" | jq -r '.webReady // true')
+      fi
+
+      meta=$(echo "${meta}" | jq --argjson wr "${is_wr}" '.webReady = $wr')
+
+      if [ "${is_wr}" = "true" ]; then
+        echo "  [DISCOVER] ${app} identified (WebAssembly release available!)"
+      else
         echo "  [DISCOVER] ${app} identified (desktop-only upstream; WebAssembly build in development)"
       fi
       discovered_json=$(jq -n --argjson list "${discovered_json}" --argjson item "${meta}" '$list + [$item]')

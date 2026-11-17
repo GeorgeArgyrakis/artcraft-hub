@@ -823,6 +823,41 @@ def get_discovered_apps() -> List[Dict[str, Any]]:
     return filtered
 
 
+def check_upstream_web_ready(slug: str) -> bool:
+    """
+    Check if upstream GitHub repository currently has a WebAssembly release asset (*web*.zip).
+    Falls back to KNOWN_APP_METADATA if GitHub cannot be queried.
+    """
+    try:
+        gh_headers = {
+            "User-Agent": "ArtCraftHub/2.0",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        token = os.environ.get("GITHUB_TOKEN", "").strip()
+        if token:
+            gh_headers["Authorization"] = f"Bearer {token}"
+        req = urllib.request.Request(
+            f"https://api.github.com/repos/storytold/{slug}/releases/latest",
+            headers=gh_headers,
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            assets = data.get("assets", [])
+            if isinstance(assets, list) and len(assets) > 0:
+                return any(
+                    re.search(r"web.*\.zip$", a.get("name", ""), re.IGNORECASE)
+                    for a in assets
+                    if isinstance(a, dict)
+                )
+    except Exception:
+        pass
+
+    if slug in KNOWN_APP_METADATA:
+        return bool(KNOWN_APP_METADATA[slug].get("webReady", False if slug == "anicraft" else True))
+    return True
+
+
 def discover_upstream_apps() -> List[Dict[str, Any]]:
     """
     Query getartcraft.com and GitHub storytold organization for new Craft apps not yet in catalog.json.
@@ -873,6 +908,7 @@ def discover_upstream_apps() -> List[Dict[str, Any]]:
     for slug in sorted(candidate_slugs):
         if slug in catalog:
             continue
+        web_ready = check_upstream_web_ready(slug)
         if slug in KNOWN_APP_METADATA:
             m = KNOWN_APP_METADATA[slug]
             entry = {
@@ -884,7 +920,7 @@ def discover_upstream_apps() -> List[Dict[str, Any]]:
                 "accentColor": m["accentColor"],
                 "tagline": m["tagline"],
                 "desc": m["desc"],
-                "webReady": m.get("webReady", True),
+                "webReady": web_ready,
                 "visible": True,
             }
         else:
@@ -898,7 +934,7 @@ def discover_upstream_apps() -> List[Dict[str, Any]]:
                 "accentColor": "#4f46e5",
                 "tagline": f"{title} Studio App",
                 "desc": f"Open-source {title} creative application.",
-                "webReady": True,
+                "webReady": web_ready,
                 "visible": True,
             }
         entry["icon"] = resolve_app_icon(slug)
