@@ -102,7 +102,7 @@ fi
 
 # ── Download & extract ────────────────────────────────────────────────────────
 echo "Downloading: ${DOWNLOAD_URL}"
-TMP_ZIP=$(mktemp "/tmp/${REPONAME}_fetch.XXXXXX.zip")
+TMP_ZIP=$(mktemp "/tmp/${REPONAME}_fetch_zip.XXXXXX")
 TMP_EXTRACT=$(mktemp -d "/tmp/${REPONAME}_fetch.XXXXXX")
 rm -rf "${TMP_ZIP}" "${TMP_EXTRACT}"
 mkdir -p "${TMP_EXTRACT}" "${TARGET_DIR}/${REPONAME}/releases"

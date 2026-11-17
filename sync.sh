@@ -719,7 +719,7 @@ sync_releases() {
 
     echo "  Downloading: ${download_url}"
     local tmp_zip tmp_extract
-    tmp_zip=$(mktemp "/tmp/${reponame}.XXXXXX.zip")
+    tmp_zip=$(mktemp "/tmp/${reponame}_zip.XXXXXX")
     tmp_extract=$(mktemp -d "/tmp/${reponame}_extract.XXXXXX")
     rm -rf "${tmp_zip}" "${tmp_extract}"
     mkdir -p "${tmp_extract}" "${releases_dir}"
