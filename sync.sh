@@ -302,16 +302,6 @@ get_app_metadata() {
     --argjson webReady "${webReady}" \
     '{app: $app, repo: $repo, title: $title, category: $category, categoryTag: $categoryTag, accentColor: $accentColor, tagline: $tagline, desc: $desc, visible: $visible, webReady: $webReady}'
 }
-    --arg repo "storytold/${app}" \
-    --arg title "${title}" \
-    --arg category "${category}" \
-    --arg categoryTag "${categoryTag}" \
-    --arg accentColor "${accentColor}" \
-    --arg tagline "${tagline}" \
-    --arg desc "${desc}" \
-    --argjson webReady "${webReady}" \
-    '{app: $app, repo: $repo, title: $title, category: $category, categoryTag: $categoryTag, accentColor: $accentColor, tagline: $tagline, desc: $desc, webReady: $webReady, visible: true}'
-}
 
 # ---------------------------------------------------------------------------
 # Check if new ArtCraft apps were published upstream
