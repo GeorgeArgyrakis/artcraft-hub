@@ -783,7 +783,7 @@
               <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
             </svg>
           </button>
-          <button type="button" class="card-action-btn btn-del-app" title="Delete application & purge data" data-app="${appInfo.app}">
+          <button type="button" class="card-action-btn btn-del-app" title="Purge data & hide" data-app="${appInfo.app}">
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <polyline points="3 6 5 6 21 6"></polyline>
               <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -1988,7 +1988,7 @@
       appToDelete = appName;
       const meta = getAppMeta(appName);
       if (deleteMessage) {
-        deleteMessage.innerHTML = `Are you sure you want to delete <strong>${escapeHtml(meta.title)}</strong>?`;
+        deleteMessage.innerHTML = `Are you sure you want to purge all downloaded data for <strong>${escapeHtml(meta.title)}</strong>?`;
       }
       deleteModal.style.display = 'flex';
     }
@@ -2020,17 +2020,17 @@
 
         const data = await res.json();
         if (data.ok) {
-          showToast('Application Deleted', `${meta.title} was removed and all data was purged.`, 'info');
+          showToast('Data Purged', `${meta.title} data was purged and the application was hidden from the dashboard.`, 'info');
           closeDeleteModal();
           await fetchManifest();
         } else {
-          showToast('Delete Failed', data.error || 'Could not delete application.', 'error');
+          showToast('Purge Failed', data.error || 'Could not purge application data.', 'error');
         }
       } catch (err) {
         showToast('Network Error', err.message, 'error');
       } finally {
         btnDeleteConfirm.disabled = false;
-        btnDeleteConfirm.textContent = 'Delete & Purge Data';
+        btnDeleteConfirm.textContent = 'Purge Data';
       }
     }
 
