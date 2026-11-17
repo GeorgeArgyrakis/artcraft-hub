@@ -346,13 +346,18 @@ class TestCatalogManagement(unittest.TestCase):
         self.assertEqual(code, 200)
         self.assertTrue(res["ok"])
 
-        # Verify removed from catalog
+        # Verify marked visible: false in catalog
         catalog = switch_api.get_catalog()
-        self.assertNotIn("photocraft", catalog)
+        self.assertFalse(catalog["photocraft"].get("visible", True))
 
         # Verify filesystem directory was purged
         self.assertFalse(app_dir.exists())
         self.assertFalse(icon_file.exists())
+
+        # Verify sync is rejected for hidden/deleted app
+        sync_res, sync_code = switch_api.trigger_sync("photocraft")
+        self.assertEqual(sync_code, 400)
+        self.assertIn("hidden", sync_res.get("error", ""))
 
 
 class TestAdminPasswordProtection(unittest.TestCase):

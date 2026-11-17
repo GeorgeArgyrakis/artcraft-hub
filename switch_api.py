@@ -563,6 +563,9 @@ def trigger_sync(app_key: Optional[str] = None) -> Tuple[Dict[str, Any], int]:
 
     cmd = [str(sync_script)]
     if app_key and APP_NAME_RE.fullmatch(app_key):
+        catalog = get_catalog()
+        if app_key in catalog and catalog[app_key].get("visible") is False:
+            return {"ok": False, "error": f"Cannot sync '{app_key}': application is marked as hidden (visible: false)."}, 400
         cmd.append(app_key)
 
     try:
@@ -723,16 +726,22 @@ def set_app_visibility(app_key: str, visible: bool) -> Tuple[Dict[str, Any], int
 
 
 def delete_catalog_app(app_key: str) -> Tuple[Dict[str, Any], int]:
-    """Delete an app from catalog.json and purge its files and graphics from disk."""
+    """Delete an app from UI: mark visible: false in catalog and purge all its downloaded data and assets from disk."""
     if not APP_NAME_RE.fullmatch(app_key):
         return {"ok": False, "error": f"Invalid app name '{app_key}'"}, 400
 
     with CATALOG_LOCK:
         catalog = get_catalog()
-        if app_key in catalog:
-            del catalog[app_key]
-            if not save_catalog(catalog):
-                return {"ok": False, "error": "Failed to save catalog.json"}, 500
+        if app_key not in catalog:
+            return {"ok": False, "error": f"App '{app_key}' not found in catalog"}, 404
+
+        if isinstance(catalog[app_key], dict):
+            catalog[app_key]["visible"] = False
+        else:
+            catalog[app_key] = {"visible": False}
+
+        if not save_catalog(catalog):
+            return {"ok": False, "error": "Failed to save catalog.json"}, 500
 
     # Purge application directory in TARGET_DIR (/data/{app})
     app_dir = Path(TARGET_DIR) / app_key
@@ -753,7 +762,7 @@ def delete_catalog_app(app_key: str) -> Tuple[Dict[str, Any], int]:
             except OSError:
                 pass
 
-    return {"ok": True, "app": app_key, "deleted": True}, 200
+    return {"ok": True, "app": app_key, "deleted": True, "visible": False}, 200
 
 
 def resolve_app_icon(app_name: str) -> Optional[str]:

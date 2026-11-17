@@ -58,30 +58,59 @@ if [ -n "${GITHUB_TOKEN:-}" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Read app list from conf file
+# Return merged catalog JSON (bundled container defaults + user overrides)
 # ---------------------------------------------------------------------------
-read_apps() {
-  local apps=()
-  local cat_file=""
-
-  # Locate existing catalog.json (user config, bundled share, or local)
-  for p in "${CATALOG_FILE:-/config/catalog.json}" "/usr/local/share/artcraft/catalog.json" "./config/catalog.json"; do
+get_merged_catalog_json() {
+  local master_file=""
+  for p in "/usr/local/share/artcraft/catalog.json" "./config/catalog.json"; do
     if [ -f "$p" ]; then
-      cat_file="$p"
+      master_file="$p"
       break
     fi
   done
 
-  # Read repos defined in catalog.json
-  if [ -n "${cat_file}" ] && [ -f "${cat_file}" ]; then
-    while IFS= read -r repo || [ -n "$repo" ]; do
-      [[ -z "$repo" ]] && continue
-      apps+=("$repo")
-    done < <(jq -r 'to_entries[] | .value.repo // empty' "${cat_file}" 2>/dev/null || true)
+  local user_file="${CATALOG_FILE:-/config/catalog.json}"
+
+  local master_json="{}"
+  if [ -n "${master_file}" ] && [ -f "${master_file}" ]; then
+    local m_content
+    m_content=$(cat "${master_file}" 2>/dev/null || echo "{}")
+    if echo "${m_content}" | jq -e 'type == "object"' >/dev/null 2>&1; then
+      master_json="${m_content}"
+    fi
   fi
 
+  local user_json="{}"
+  if [ -f "${user_file}" ]; then
+    local u_content
+    u_content=$(cat "${user_file}" 2>/dev/null || echo "{}")
+    if echo "${u_content}" | jq -e 'type == "object"' >/dev/null 2>&1; then
+      user_json="${u_content}"
+    fi
+  fi
+
+  # Deep merge user overrides on top of master defaults
+  jq -n --argjson master "${master_json}" --argjson user "${user_json}" '
+    $master * $user
+  ' 2>/dev/null || echo "${master_json}"
+}
+
+# ---------------------------------------------------------------------------
+# Read active app list from merged catalog (excluding visible: false)
+# ---------------------------------------------------------------------------
+read_apps() {
+  local apps=()
+  local catalog_json
+  catalog_json=$(get_merged_catalog_json)
+
+  # Read repos defined in combined catalog where visible is not false
+  while IFS= read -r repo || [ -n "$repo" ]; do
+    [[ -z "$repo" ]] && continue
+    apps+=("$repo")
+  done < <(echo "${catalog_json}" | jq -r 'to_entries[] | select(.value.visible != false) | .value.repo // empty' 2>/dev/null || true)
+
   if [ ${#apps[@]} -eq 0 ]; then
-    echo "[WARN] No apps found in catalog (${cat_file:-${CATALOG_FILE}}). Nothing to sync." >&2
+    echo "[WARN] No active apps found in combined catalog. Nothing to sync." >&2
     return 1
   fi
 
@@ -310,15 +339,6 @@ discover_new_apps() {
   local discovered_file="${TARGET_DIR}/.discovered_apps.json"
   echo "Checking for newly published ArtCraft apps..."
 
-  # Locate existing catalog.json
-  local cat_file=""
-  for p in "${CATALOG_FILE:-/config/catalog.json}" "/usr/local/share/artcraft/catalog.json" "./config/catalog.json"; do
-    if [ -f "$p" ]; then
-      cat_file="$p"
-      break
-    fi
-  done
-
   local candidates=()
 
   # 1. Fetch official ArtCraft app lineup from https://getartcraft.com/
@@ -382,11 +402,11 @@ discover_new_apps() {
     mapfile -t unique_candidates < <(printf '%s\n' "${candidates[@]}" | tr '[:upper:]' '[:lower:]' | grep -E '^[a-z0-9_-]+$' | sort -u)
   fi
 
-  # Read existing catalog keys to exclude already-registered applications
+  # Read existing catalog keys from combined catalog to exclude already-registered applications
   local existing_keys=()
-  if [ -n "${cat_file}" ] && [ -f "${cat_file}" ]; then
-    mapfile -t existing_keys < <(jq -r 'keys[]' "${cat_file}" 2>/dev/null || true)
-  fi
+  local catalog_json
+  catalog_json=$(get_merged_catalog_json)
+  mapfile -t existing_keys < <(echo "${catalog_json}" | jq -r 'keys[]' 2>/dev/null || true)
 
   local new_discovered=()
   for c in "${unique_candidates[@]}"; do
@@ -476,6 +496,15 @@ sync_releases() {
   local APPS=()
   if [ -n "${target_app}" ]; then
     target_app=$(basename "${target_app}" | tr '[:upper:]' '[:lower:]')
+    local catalog_json
+    catalog_json=$(get_merged_catalog_json)
+    local is_visible
+    is_visible=$(echo "${catalog_json}" | jq -r --arg a "${target_app}" '.[$a].visible // true')
+    if [ "${is_visible}" = "false" ]; then
+      echo "[$(date -u +'%Y-%m-%d %H:%M:%SZ')] Skipping '${target_app}': app is marked visible: false in catalog."
+      build_dashboard
+      return 0
+    fi
     local repo_found=""
     while IFS= read -r r || [ -n "$r" ]; do
       [[ -z "$r" ]] && continue
