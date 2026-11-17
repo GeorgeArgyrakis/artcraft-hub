@@ -281,6 +281,7 @@ get_app_metadata() {
   local accentColor=""
   local tagline=""
   local desc=""
+  local webReady=true
 
   case "${app}" in
     anicraft)
@@ -290,6 +291,7 @@ get_app_metadata() {
       accentColor="#a855f7"
       tagline="2D Vector Animation Studio"
       desc="Open-source 2D animation, vector tweens, and interactive timelines."
+      webReady=false
       ;;
     materialcraft)
       title="MaterialCraft"
@@ -298,6 +300,7 @@ get_app_metadata() {
       accentColor="#e11d48"
       tagline="Procedural PBR Material Authoring"
       desc="Open-source procedural PBR material designer and shader authoring in pure Rust."
+      webReady=true
       ;;
     solidcraft)
       title="SolidCraft"
@@ -306,6 +309,7 @@ get_app_metadata() {
       accentColor="#0284c7"
       tagline="Parametric Solid Modeling"
       desc="Open-source boundary representation and parametric solid modeling engine."
+      webReady=true
       ;;
     *)
       # Fallback heuristic: clean title without broken sed escapes
@@ -318,6 +322,7 @@ get_app_metadata() {
       accentColor="#4f46e5"
       tagline="${title} Studio App"
       desc="Open-source ${title} creative application."
+      webReady=true
       ;;
   esac
 
@@ -330,7 +335,8 @@ get_app_metadata() {
     --arg accentColor "${accentColor}" \
     --arg tagline "${tagline}" \
     --arg desc "${desc}" \
-    '{app: $app, repo: $repo, title: $title, category: $category, categoryTag: $categoryTag, accentColor: $accentColor, tagline: $tagline, desc: $desc, visible: true}'
+    --argjson webReady "${webReady}" \
+    '{app: $app, repo: $repo, title: $title, category: $category, categoryTag: $categoryTag, accentColor: $accentColor, tagline: $tagline, desc: $desc, webReady: $webReady, visible: true}'
 }
 
 # ---------------------------------------------------------------------------
@@ -439,6 +445,11 @@ discover_new_apps() {
       sync_app_icon "storytold/${app}" "${app}"
       local meta
       meta=$(get_app_metadata "${app}")
+      local is_wr
+      is_wr=$(echo "${meta}" | jq -r '.webReady // true')
+      if [ "${is_wr}" = "false" ]; then
+        echo "  [DISCOVER] ${app} identified (desktop-only upstream; WebAssembly build in development)"
+      fi
       discovered_json=$(jq -n --argjson list "${discovered_json}" --argjson item "${meta}" '$list + [$item]')
     done
     echo "${discovered_json}" > "${discovered_file}" 2>/dev/null || true

@@ -784,7 +784,7 @@ KNOWN_APP_METADATA: Dict[str, Dict[str, Any]] = {
         "accentColor": "#a855f7",
         "tagline": "2D Vector Animation Studio",
         "desc": "Open-source 2D animation, vector tweens, and interactive timelines.",
-        "webReady": True,
+        "webReady": False,  # Upstream is developing WebAssembly build; desktop-only currently
     },
     "materialcraft": {
         "title": "MaterialCraft",
@@ -873,9 +873,6 @@ def discover_upstream_apps() -> List[Dict[str, Any]]:
     for slug in sorted(candidate_slugs):
         if slug in catalog:
             continue
-        # Only discover apps that have WebAssembly builds published upstream
-        if slug in KNOWN_APP_METADATA and not KNOWN_APP_METADATA[slug].get("webReady", True):
-            continue
         if slug in KNOWN_APP_METADATA:
             m = KNOWN_APP_METADATA[slug]
             entry = {
@@ -887,6 +884,7 @@ def discover_upstream_apps() -> List[Dict[str, Any]]:
                 "accentColor": m["accentColor"],
                 "tagline": m["tagline"],
                 "desc": m["desc"],
+                "webReady": m.get("webReady", True),
                 "visible": True,
             }
         else:
@@ -900,6 +898,7 @@ def discover_upstream_apps() -> List[Dict[str, Any]]:
                 "accentColor": "#4f46e5",
                 "tagline": f"{title} Studio App",
                 "desc": f"Open-source {title} creative application.",
+                "webReady": True,
                 "visible": True,
             }
         entry["icon"] = resolve_app_icon(slug)

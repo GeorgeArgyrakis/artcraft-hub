@@ -485,6 +485,10 @@
        Upstream ArtCraft Discovery & Auto-Add Helpers
        ------------------------------------------------------------- */
     async function autoAddDiscoveredApp(app) {
+      if (app && app.webReady === false) {
+        showToast('Not Web-Ready', `${app.title} currently only has desktop builds upstream. WebAssembly version is in development.`, 'info');
+        return;
+      }
       showToast('Adding Application', `Registering ${app.title} and starting release download...`, 'info');
 
       const payload = {
@@ -547,7 +551,7 @@
         dismissed = JSON.parse(sessionStorage.getItem('artcraft_dismissed_discoveries') || '[]');
       } catch (e) {}
 
-      const pending = discoveredAppsList.filter(a => a && a.app && !APP_CATALOG[a.app] && !dismissed.includes(a.app));
+      const pending = discoveredAppsList.filter(a => a && a.app && !APP_CATALOG[a.app] && !dismissed.includes(a.app) && a.webReady !== false);
 
       if (pending.length === 0) {
         discoveryBanner.style.display = 'none';
