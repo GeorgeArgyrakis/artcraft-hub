@@ -322,7 +322,7 @@ get_app_metadata() {
       accentColor="#4f46e5"
       tagline="${title} Studio App"
       desc="Open-source ${title} creative application."
-      webReady=true
+      webReady=false
       ;;
   esac
 
@@ -453,10 +453,14 @@ discover_new_apps() {
         -H "Accept: application/vnd.github+json" \
         -H "X-GitHub-Api-Version: 2022-11-28" \
         "https://api.github.com/repos/storytold/${app}/releases/latest" 2>/dev/null || echo "{}")
-      if echo "${rel_json}" | jq -e '.assets[]? | select(.name | ascii_downcase | test("web.*\\.zip$"))' >/dev/null 2>&1; then
-        is_wr=true
+      if echo "${rel_json}" | jq -e '.assets | type == "array" and length > 0' >/dev/null 2>&1; then
+        if echo "${rel_json}" | jq -e '.assets[]? | select(.name | ascii_downcase | test("web.*\\.zip$"))' >/dev/null 2>&1; then
+          is_wr=true
+        else
+          is_wr=false
+        fi
       else
-        is_wr=$(echo "${meta}" | jq -r '.webReady // true')
+        is_wr=$(echo "${meta}" | jq -r '.webReady // false')
       fi
 
       meta=$(echo "${meta}" | jq --argjson wr "${is_wr}" '.webReady = $wr')

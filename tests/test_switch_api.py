@@ -664,7 +664,9 @@ class TestAppDiscovery(unittest.TestCase):
             self.assertFalse(disc_map["anicraft"].get("webReady", True))
 
     def test_upstream_web_ready_dynamic_detection(self):
+        import urllib.error
         from unittest.mock import patch, MagicMock
+
         # When AniCraft only has desktop assets, webReady is False
         desktop_only_json = json.dumps({"assets": [{"name": "anicraft-0.2.1.AppImage"}]}).encode("utf-8")
         with patch("urllib.request.urlopen") as mock_urlopen:
@@ -682,6 +684,37 @@ class TestAppDiscovery(unittest.TestCase):
             mock_resp.__enter__.return_value = mock_resp
             mock_urlopen.return_value = mock_resp
             self.assertTrue(switch_api.check_upstream_web_ready("anicraft"))
+
+        # Works generically for ANY app (e.g. voxelcraft)
+        # 1. Desktop only
+        voxel_desktop = json.dumps({"assets": [{"name": "voxelcraft-linux.tar.gz"}, {"name": "voxelcraft.exe"}]}).encode("utf-8")
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = voxel_desktop
+            mock_resp.__enter__.return_value = mock_resp
+            mock_urlopen.return_value = mock_resp
+            self.assertFalse(switch_api.check_upstream_web_ready("voxelcraft"))
+
+        # 2. WASM zip available
+        voxel_wasm = json.dumps({"assets": [{"name": "voxelcraft-web-v1.0.zip"}]}).encode("utf-8")
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = voxel_wasm
+            mock_resp.__enter__.return_value = mock_resp
+            mock_urlopen.return_value = mock_resp
+            self.assertTrue(switch_api.check_upstream_web_ready("voxelcraft"))
+
+        # 3. Empty assets list
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = b'{"assets": []}'
+            mock_resp.__enter__.return_value = mock_resp
+            mock_urlopen.return_value = mock_resp
+            self.assertFalse(switch_api.check_upstream_web_ready("voxelcraft"))
+
+        # 4. HTTP 404 Not Found (no releases yet upstream)
+        with patch("urllib.request.urlopen", side_effect=urllib.error.HTTPError("url", 404, "Not Found", None, None)):
+            self.assertFalse(switch_api.check_upstream_web_ready("unknowncraft"))
 
 
 class TestSecurityAndConcurrency(unittest.TestCase):

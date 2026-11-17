@@ -826,7 +826,8 @@ def get_discovered_apps() -> List[Dict[str, Any]]:
 def check_upstream_web_ready(slug: str) -> bool:
     """
     Check if upstream GitHub repository currently has a WebAssembly release asset (*web*.zip).
-    Falls back to KNOWN_APP_METADATA if GitHub cannot be queried.
+    Generic for any app: queries GitHub releases endpoint dynamically.
+    Falls back to KNOWN_APP_METADATA or False if GitHub cannot be queried.
     """
     try:
         gh_headers = {
@@ -843,19 +844,24 @@ def check_upstream_web_ready(slug: str) -> bool:
         )
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-            assets = data.get("assets", [])
-            if isinstance(assets, list) and len(assets) > 0:
+            assets = data.get("assets")
+            if isinstance(assets, list):
+                if len(assets) == 0:
+                    return False
                 return any(
                     re.search(r"web.*\.zip$", a.get("name", ""), re.IGNORECASE)
                     for a in assets
                     if isinstance(a, dict)
                 )
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return False
     except Exception:
         pass
 
     if slug in KNOWN_APP_METADATA:
-        return bool(KNOWN_APP_METADATA[slug].get("webReady", False if slug == "anicraft" else True))
-    return True
+        return bool(KNOWN_APP_METADATA[slug].get("webReady", False))
+    return False
 
 
 def discover_upstream_apps() -> List[Dict[str, Any]]:
