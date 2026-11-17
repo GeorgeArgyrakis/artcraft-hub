@@ -7,18 +7,26 @@ MAX_RELEASES="${MAX_RELEASES:-3}"
 SYNC_LOCK="/tmp/sync.lock"
 
 # Concurrency lock protection (compatible with switch_api.py trigger_sync, CLI, and cron)
-if [ -f "${SYNC_LOCK}" ]; then
-  locked_pid=$(cat "${SYNC_LOCK}" 2>/dev/null || echo "")
-  if [ -n "${locked_pid}" ] && kill -0 "${locked_pid}" 2>/dev/null; then
-    echo "[WARN] Another sync process (PID ${locked_pid}) is already running. Exiting." >&2
-    exit 0
-  fi
-fi
-echo "$$" > "${SYNC_LOCK}"
+acquire_lock() {
+  while true; do
+    if (set -C; echo "$$" > "${SYNC_LOCK}") 2>/dev/null; then
+      return 0
+    fi
+    local locked_pid
+    locked_pid=$(cat "${SYNC_LOCK}" 2>/dev/null || echo "")
+    if [ -n "${locked_pid}" ] && kill -0 "${locked_pid}" 2>/dev/null; then
+      echo "[WARN] Another sync process (PID ${locked_pid}) is already running. Exiting." >&2
+      exit 0
+    fi
+    # Lock is stale; remove and retry
+    rm -f "${SYNC_LOCK}" 2>/dev/null || true
+  done
+}
+acquire_lock
 
 cleanup_on_exit() {
   local exit_code=$?
-  rm -f "${SYNC_LOCK}" 2>/dev/null || true
+  rm -f "${SYNC_LOCK}" /tmp/gh_disc_hdr.* /tmp/gh_body.* /tmp/gh_hdr_* /tmp/gh_body_* 2>/dev/null || true
   if [ "${exit_code}" -ne 0 ]; then
     local ts
     ts=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
@@ -42,6 +50,12 @@ cleanup_on_exit() {
   fi
 }
 trap cleanup_on_exit EXIT
+
+# GitHub authentication header (top-level scope accessible by all functions)
+auth_header=()
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+  auth_header=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+fi
 
 # ---------------------------------------------------------------------------
 # Read app list from conf file
@@ -360,7 +374,6 @@ discover_new_apps() {
     local disc_hdr_tmp disc_body_tmp
     disc_hdr_tmp=$(mktemp /tmp/gh_disc_hdr.XXXXXX)
     disc_body_tmp=$(mktemp /tmp/gh_body.XXXXXX)
-    trap 'rm -f "${disc_hdr_tmp}" "${disc_body_tmp}"' RETURN
     local disc_code
     disc_code=$(curl -s --max-time 10 \
       -w "%{http_code}" \
@@ -415,10 +428,6 @@ discover_new_apps() {
       fi
     done
     if [ "$is_known" = false ]; then
-      # Exclude candidate apps that do not have WebAssembly builds published yet (e.g. AniCraft is desktop-only)
-      if [ "$c" = "anicraft" ]; then
-        continue
-      fi
       new_discovered+=("$c")
     fi
   done
@@ -504,7 +513,7 @@ sync_releases() {
     return 0
   fi
 
-  local auth_header=()
+  auth_header=()
   if [ -n "${GITHUB_TOKEN:-}" ]; then
     auth_header=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
   fi

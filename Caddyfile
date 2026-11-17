@@ -73,6 +73,8 @@
         not path /icons*
         not path /previews*
         not path /images*
+        not path /releases*
+        not path /config*
         path_regexp noslash ^/([A-Za-z0-9_-]+)$
     }
     redir @app_no_slash /{re.noslash.1}/ 308
@@ -98,6 +100,9 @@
         not path /icons*
         not path /previews*
         not path /images*
+        not path /releases*
+        not path /config*
+        not path /.*
         not path_regexp already ^/[^/]+/(current|releases)(/.*)?$
         path_regexp app ^/([^/]+)(/.*)?$
     }

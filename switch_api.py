@@ -39,7 +39,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 TARGET_DIR: str = os.environ.get("TARGET_DIR", "/data")
-SYNC_LOCK_FILE: Path = Path(os.environ.get("SYNC_LOCK_PATH", "/tmp/sync.lock"))
+DEFAULT_LOCK_DIR: str = "/tmp" if os.path.isdir("/tmp") else tempfile.gettempdir()
+SYNC_LOCK_FILE: Path = Path(os.environ.get("SYNC_LOCK_PATH", Path(DEFAULT_LOCK_DIR) / "sync.lock"))
 STATUS_FILE: Path = Path(TARGET_DIR) / ".sync_status.json"
 CATALOG_FILE: Path = Path(os.environ.get("CATALOG_FILE", "/config/catalog.json"))
 BUNDLED_CATALOG_FILE: Path = Path("/usr/local/share/artcraft/catalog.json")
@@ -123,9 +124,15 @@ def sorted_releases_newest_first(releases: List[Dict[str, Any]]) -> List[Dict[st
             core_part, prerelease_part = version_part.split("-", 1)
             is_final = 0  # Pre-releases sort lower than final releases
         else:
-            core_part = version_part
-            prerelease_part = ""
-            is_final = 1  # Final releases sort higher
+            match = re.match(r"^(\d+(?:\.\d+)*)(.*)$", version_part)
+            if match and match.group(2):
+                core_part = match.group(1)
+                prerelease_part = match.group(2).lstrip("-.")
+                is_final = 0
+            else:
+                core_part = version_part
+                prerelease_part = ""
+                is_final = 1  # Final releases sort higher
 
         # Parse numeric core components (e.g. 1.0.0)
         core_tokens: List[int] = []
@@ -447,7 +454,12 @@ def read_request_body(handler: BaseHTTPRequestHandler) -> Tuple[Optional[bytes],
         return None, (400, {"ok": False, "error": f"Failed reading request body: {exc}"})
 
 
-TRUST_FORWARD_AUTH: bool = os.environ.get("TRUST_FORWARD_AUTH", "").strip().lower() in ("true", "1", "yes")
+def is_forward_auth_trusted() -> bool:
+    """Check if forward/reverse-proxy authentication headers should be trusted."""
+    return os.environ.get("TRUST_FORWARD_AUTH", "").strip().lower() in ("true", "1", "yes")
+
+
+TRUST_FORWARD_AUTH: bool = is_forward_auth_trusted()
 
 
 def is_https_request(headers: Any) -> bool:
@@ -463,8 +475,7 @@ def verify_admin_request(headers: Any) -> bool:
         return True
 
     # 1. Check Reverse-Proxy SSO / ForwardAuth headers (Authelia, Authentik, Cloudflare Access)
-    trust_sso = TRUST_FORWARD_AUTH or os.environ.get("TRUST_FORWARD_AUTH", "").strip().lower() in ("true", "1", "yes")
-    if trust_sso and hasattr(headers, "get"):
+    if is_forward_auth_trusted() and hasattr(headers, "get"):
         forwarded_user = (
             headers.get("Remote-User") or
             headers.get("X-Forwarded-User") or
@@ -561,6 +572,7 @@ def trigger_sync(app_key: Optional[str] = None) -> Tuple[Dict[str, Any], int]:
             stderr=subprocess.DEVNULL,
             start_new_session=True,
         )
+        SYNC_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
         SYNC_LOCK_FILE.write_text(str(proc.pid))
 
         def _reap(p: subprocess.Popen) -> None:
@@ -772,7 +784,7 @@ KNOWN_APP_METADATA: Dict[str, Dict[str, Any]] = {
         "accentColor": "#a855f7",
         "tagline": "2D Vector Animation Studio",
         "desc": "Open-source 2D animation, vector tweens, and interactive timelines.",
-        "webReady": False,  # Upstream is developing WebAssembly build; desktop-only currently
+        "webReady": True,
     },
     "materialcraft": {
         "title": "MaterialCraft",
@@ -909,10 +921,15 @@ def get_manifest(headers: Optional[Any] = None) -> Dict[str, Any]:
     found_apps = set()
 
     catalog = get_catalog()
+    enriched_catalog: Dict[str, Any] = {}
     for cat_app, meta in catalog.items():
         if isinstance(meta, dict):
-            meta["icon"] = resolve_app_icon(cat_app)
-            meta["preview"] = resolve_app_preview(cat_app)
+            entry = dict(meta)
+            entry["icon"] = resolve_app_icon(cat_app)
+            entry["preview"] = resolve_app_preview(cat_app)
+            enriched_catalog[cat_app] = entry
+        else:
+            enriched_catalog[cat_app] = meta
 
     if base.is_dir():
         for app_dir in sorted(base.iterdir()):
@@ -948,7 +965,7 @@ def get_manifest(headers: Optional[Any] = None) -> Dict[str, Any]:
     return {
         "apps": apps,
         "system": get_status(),
-        "catalog": catalog,
+        "catalog": enriched_catalog,
         "auth_required": is_auth_required(),
         "authenticated": verify_admin_request(headers) if headers is not None else (not is_auth_required()),
         "discovered_apps": get_discovered_apps(),
@@ -1027,7 +1044,12 @@ def switch_version(app: str, tag: str) -> Tuple[Dict[str, Any], int]:
 # Request handler
 # ---------------------------------------------------------------------------
 
-CORS_ORIGIN: str = os.environ.get("CORS_ORIGIN", "").strip()
+def get_cors_origin() -> str:
+    """Return configured allowed CORS origin from environment."""
+    return os.environ.get("CORS_ORIGIN", "").strip()
+
+
+CORS_ORIGIN: str = get_cors_origin()
 
 
 def get_cors_headers(origin: Optional[str] = None) -> Dict[str, str]:
@@ -1037,7 +1059,7 @@ def get_cors_headers(origin: Optional[str] = None) -> Dict[str, str]:
         "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Admin-Password, Cookie, Remote-User, X-Forwarded-User",
         "Access-Control-Expose-Headers": "X-Auth-Required, Set-Cookie, Retry-After",
     }
-    allowed_origin = CORS_ORIGIN or os.environ.get("CORS_ORIGIN", "").strip()
+    allowed_origin = get_cors_origin()
     if allowed_origin:
         if allowed_origin == "*" or (origin and origin == allowed_origin):
             headers["Access-Control-Allow-Origin"] = origin or allowed_origin

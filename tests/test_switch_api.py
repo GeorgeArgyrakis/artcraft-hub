@@ -647,7 +647,23 @@ class TestAppDiscovery(unittest.TestCase):
 
     def test_discover_upstream_skips_non_web_ready(self):
         from unittest.mock import patch, MagicMock
-        mock_html = '<link rel="preload" href="/images/apps/anicraft/icon.webp" as="image"/><link rel="preload" href="/images/apps/materialcraft/icon.webp" as="image"/>'
+        mock_html = '<link rel="preload" href="/images/apps/mocknonweb/icon.webp" as="image"/><link rel="preload" href="/images/apps/materialcraft/icon.webp" as="image"/>'
+        with patch.dict(switch_api.KNOWN_APP_METADATA, {"mocknonweb": {"title": "MockNonWeb", "webReady": False}}):
+            with patch("urllib.request.urlopen") as mock_urlopen:
+                mock_resp = MagicMock()
+                mock_resp.read.return_value = mock_html.encode("utf-8")
+                mock_resp.__enter__.return_value = mock_resp
+                mock_urlopen.return_value = mock_resp
+
+                discovered = switch_api.discover_upstream_apps()
+                discovered_slugs = [d["app"] for d in discovered]
+                # mocknonweb is webReady=False, so only materialcraft should be discovered
+                self.assertIn("materialcraft", discovered_slugs)
+                self.assertNotIn("mocknonweb", discovered_slugs)
+
+    def test_discover_upstream_includes_anicraft(self):
+        from unittest.mock import patch, MagicMock
+        mock_html = '<link rel="preload" href="/images/apps/anicraft/icon.webp" as="image"/>'
         with patch("urllib.request.urlopen") as mock_urlopen:
             mock_resp = MagicMock()
             mock_resp.read.return_value = mock_html.encode("utf-8")
@@ -656,9 +672,7 @@ class TestAppDiscovery(unittest.TestCase):
 
             discovered = switch_api.discover_upstream_apps()
             discovered_slugs = [d["app"] for d in discovered]
-            # anicraft is webReady=False, so only materialcraft should be discovered
-            self.assertIn("materialcraft", discovered_slugs)
-            self.assertNotIn("anicraft", discovered_slugs)
+            self.assertIn("anicraft", discovered_slugs)
 
 
 class TestSecurityAndConcurrency(unittest.TestCase):

@@ -13,7 +13,7 @@ services:
       - artcraft-config:/config
     environment:
       # GitHub token for higher API rate limits (optional but recommended)
-      GITHUB_TOKEN: ""
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       # Cron schedule for release checks (default: daily at midnight)
       SYNC_CRON: "0 0 * * *"
       # Timezone for cron (e.g. Europe/Athens)

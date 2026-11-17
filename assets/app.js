@@ -81,9 +81,9 @@
         .split(' ')
         .filter(Boolean)
         .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-        .join('');
+        .join(' ');
 
-      const mono = cleanTitle.substring(0, 2).toUpperCase() || 'AC';
+      const mono = cleanTitle.replace(/[^a-zA-Z0-9]/g, '').substring(0, 2).toUpperCase() || 'AC';
 
       // Intelligent category detection from keywords
       let category = 'Graphics & Photo';
@@ -424,6 +424,8 @@
     let lastToastTime = 0;
 
     function showToast(title, message, type = 'success') {
+      if (!toastContainer) return;
+
       const now = Date.now();
       const toastKey = `${title}:${message}`;
       if (toastKey === lastToastText && (now - lastToastTime) < 2000) {
@@ -464,7 +466,8 @@
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
     }
 
     function formatDate(isoStr) {
@@ -1770,7 +1773,7 @@
         .split(' ')
         .filter(Boolean)
         .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-        .join('');
+        .join(' ');
 
       let category = 'Graphics & Photo';
       let tag = 'CREATIVE STUDIO';
