@@ -571,8 +571,8 @@ def trigger_sync(app_key: Optional[str] = None) -> Tuple[Dict[str, Any], int]:
     try:
         proc = subprocess.Popen(
             cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=None,
+            stderr=None,
             start_new_session=True,
         )
         SYNC_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)

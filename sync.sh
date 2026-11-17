@@ -15,6 +15,9 @@ acquire_lock() {
     local locked_pid
     locked_pid=$(cat "${SYNC_LOCK}" 2>/dev/null || echo "")
     if [ -n "${locked_pid}" ] && kill -0 "${locked_pid}" 2>/dev/null; then
+      if [ "${locked_pid}" = "$$" ]; then
+        return 0
+      fi
       echo "[WARN] Another sync process (PID ${locked_pid}) is already running. Exiting." >&2
       exit 0
     fi
@@ -520,8 +523,15 @@ sync_releases() {
       APPS+=("${repo_found}")
       echo "[$(date -u +'%Y-%m-%d %H:%M:%SZ')] Targeted single-app sync: '${target_app}' (${repo_found})"
     else
-      APPS+=("storytold/${target_app}")
-      echo "[$(date -u +'%Y-%m-%d %H:%M:%SZ')] Targeted single-app sync using repo 'storytold/${target_app}'"
+      local cat_repo
+      cat_repo=$(echo "${catalog_json}" | jq -r --arg a "${target_app}" '.[$a].repo // empty' 2>/dev/null || true)
+      if [ -n "${cat_repo}" ]; then
+        APPS+=("${cat_repo}")
+        echo "[$(date -u +'%Y-%m-%d %H:%M:%SZ')] Targeted single-app sync using catalog repo '${cat_repo}'"
+      else
+        APPS+=("storytold/${target_app}")
+        echo "[$(date -u +'%Y-%m-%d %H:%M:%SZ')] Targeted single-app sync using repo 'storytold/${target_app}'"
+      fi
     fi
   else
     echo "[$(date -u +'%Y-%m-%d %H:%M:%SZ')] Starting ArtCraft release sync..."
