@@ -37,8 +37,9 @@ fi
 
 # ── Fetch release metadata ────────────────────────────────────────────────────
 echo "Fetching release metadata from GitHub..."
-HDR_TMP="/tmp/${REPONAME}_hdr_$$.tmp"
-BODY_TMP="/tmp/${REPONAME}_body_$$.tmp"
+HDR_TMP=$(mktemp "/tmp/${REPONAME}_hdr.XXXXXX")
+BODY_TMP=$(mktemp "/tmp/${REPONAME}_body.XXXXXX")
+trap 'rm -rf "${HDR_TMP:-}" "${BODY_TMP:-}" "${TMP_ZIP:-}" "${TMP_EXTRACT:-}"' EXIT
 
 HTTP_CODE=$(curl -s --max-time 10 \
   -w "%{http_code}" \
@@ -63,10 +64,15 @@ DOWNLOAD_URL=""
 # ── Web fallback if GitHub API is rate-limited ────────────────────────────────
 if [ "${IS_RL}" = true ]; then
   echo "[INFO] GitHub API rate-limited. Resolving assets via web fallback..."
-  WEB_ASSET_REL=$(curl -sfL --max-time 15 "https://github.com/${REPO}/releases/expanded_assets/${TAG}" 2>/dev/null | grep -oiE '/[A-Za-z0-9_-]+/[A-Za-z0-9_-]+/releases/download/[^"'\''<>]+web[^"'\''<>]+\.zip' | head -n 1 || true)
+  ASSETS_HTML=$(curl -sfL --max-time 15 "https://github.com/${REPO}/releases/expanded_assets/${TAG}" 2>/dev/null || true)
+  WEB_ASSET_REL=""
+  if [ -n "${ASSETS_HTML}" ]; then
+    WEB_ASSET_REL=$(echo "${ASSETS_HTML}" | grep -oiE '/[A-Za-z0-9_-]+/[A-Za-z0-9_-]+/releases/download/[^"'\''<>]+web[^"'\''<>]+\.zip' | head -n 1 || true)
+  fi
   if [ -n "${WEB_ASSET_REL}" ]; then
     DOWNLOAD_URL="https://github.com${WEB_ASSET_REL}"
   else
+    echo "[WARN] Web fallback: no matching web zip asset found in expanded_assets for ${REPO}@${TAG}"
     echo "[ERROR] GitHub API rate limit exceeded and web fallback could not locate release '${TAG}'! Set GITHUB_TOKEN to raise your limit to 5,000 req/hr." >&2
     exit 1
   fi
@@ -96,8 +102,8 @@ fi
 
 # ── Download & extract ────────────────────────────────────────────────────────
 echo "Downloading: ${DOWNLOAD_URL}"
-TMP_ZIP="/tmp/${REPONAME}_fetch_$$.zip"
-TMP_EXTRACT="/tmp/${REPONAME}_fetch_$$_extract"
+TMP_ZIP=$(mktemp "/tmp/${REPONAME}_fetch.XXXXXX.zip")
+TMP_EXTRACT=$(mktemp -d "/tmp/${REPONAME}_fetch.XXXXXX")
 rm -rf "${TMP_ZIP}" "${TMP_EXTRACT}"
 mkdir -p "${TMP_EXTRACT}" "${TARGET_DIR}/${REPONAME}/releases"
 
@@ -116,7 +122,7 @@ N_DIRS=$(find "${TMP_EXTRACT}" -mindepth 1 -maxdepth 1 -type d | wc -l)
 N_FILES=$(find "${TMP_EXTRACT}" -mindepth 1 -maxdepth 1 -type f | wc -l)
 if [ "${N_DIRS}" -eq 1 ] && [ "${N_FILES}" -eq 0 ]; then
   SUBDIR=$(find "${TMP_EXTRACT}" -mindepth 1 -maxdepth 1 -type d | head -n 1)
-  cp -rT "${SUBDIR}" "${TAG_DIR}/"
+  cp -r "${SUBDIR}"/. "${TAG_DIR}/"
 else
   cp -r "${TMP_EXTRACT}"/. "${TAG_DIR}/"
 fi

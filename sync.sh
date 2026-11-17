@@ -9,7 +9,7 @@ SYNC_LOCK="/tmp/sync.lock"
 # Concurrency lock protection (compatible with switch_api.py trigger_sync, CLI, and cron)
 if [ -f "${SYNC_LOCK}" ]; then
   locked_pid=$(cat "${SYNC_LOCK}" 2>/dev/null || echo "")
-  if [ -n "${locked_pid}" ] && kill -0 "${locked_pid}" 2>/dev/null && [ "${locked_pid}" -ne "$$" ]; then
+  if [ -n "${locked_pid}" ] && kill -0 "${locked_pid}" 2>/dev/null; then
     echo "[WARN] Another sync process (PID ${locked_pid}) is already running. Exiting." >&2
     exit 0
   fi
@@ -60,12 +60,10 @@ read_apps() {
 
   # Read repos defined in catalog.json
   if [ -n "${cat_file}" ] && [ -f "${cat_file}" ]; then
-    local cat_repos
-    cat_repos=$(jq -r 'to_entries[] | .value.repo // empty' "${cat_file}" 2>/dev/null || true)
     while IFS= read -r repo || [ -n "$repo" ]; do
       [[ -z "$repo" ]] && continue
       apps+=("$repo")
-    done <<< "$cat_repos"
+    done < <(jq -r 'to_entries[] | .value.repo // empty' "${cat_file}" 2>/dev/null || true)
   fi
 
   if [ ${#apps[@]} -eq 0 ]; then
@@ -181,7 +179,7 @@ migrate_if_needed() {
       -exec mv {} "${tmp_dir}/" \;
 
     mkdir -p "${releases_dir}/${old_tag}"
-    cp -rT "${tmp_dir}" "${releases_dir}/${old_tag}/"
+    cp -r "${tmp_dir}"/. "${releases_dir}/${old_tag}/"
     rm -rf "${tmp_dir}" "${app_dir}/version.txt"
 
     # Write active.txt
@@ -343,12 +341,10 @@ discover_new_apps() {
   local site_html
   site_html=$(curl -sfL --retry 2 --max-time 10 "https://getartcraft.com/" 2>/dev/null || echo "")
   if [ -n "${site_html}" ]; then
-    local web_apps
-    web_apps=$(echo "${site_html}" | grep -oE '/images/apps/[a-z0-9_-]+/icon\.webp' | sed -E 's|/images/apps/||; s|/icon\.webp||' | sort -u || true)
     while IFS= read -r app || [ -n "$app" ]; do
       [[ -z "$app" ]] && continue
       candidates+=("${app}")
-    done <<< "${web_apps}"
+    done < <(echo "${site_html}" | grep -oE '/images/apps/[a-z0-9_-]+/icon\.webp' | sed -E 's|/images/apps/||; s|/icon\.webp||' | sort -u || true)
   fi
 
   # 2. If getartcraft.com returned nothing (offline/blocked), fallback to GitHub organization query
@@ -361,8 +357,10 @@ discover_new_apps() {
       [ -n "${cached_disc_etag}" ] && disc_etag_hdr=(-H "If-None-Match: ${cached_disc_etag}")
     fi
 
-    local disc_hdr_tmp="/tmp/gh_disc_hdr_$$.tmp"
-    local disc_body_tmp="/tmp/gh_disc_body_$$.tmp"
+    local disc_hdr_tmp disc_body_tmp
+    disc_hdr_tmp=$(mktemp /tmp/gh_disc_hdr.XXXXXX)
+    disc_body_tmp=$(mktemp /tmp/gh_body.XXXXXX)
+    trap 'rm -f "${disc_hdr_tmp}" "${disc_body_tmp}"' RETURN
     local disc_code
     disc_code=$(curl -s --max-time 10 \
       -w "%{http_code}" \
@@ -376,7 +374,6 @@ discover_new_apps() {
 
     if [ "${disc_code}" = "304" ]; then
       echo "  [DISCOVER] GitHub org repos unmodified (304 Not Modified)"
-      rm -f "${disc_hdr_tmp}" "${disc_body_tmp}" 2>/dev/null || true
     elif [ "${disc_code}" = "200" ]; then
       local new_disc_etag
       new_disc_etag=$(grep -i '^etag:' "${disc_hdr_tmp}" 2>/dev/null | tail -n 1 | tr -d '\r\n' | sed -e 's/^[Ee][Tt][Aa][Gg]:[[:space:]]*//' || true)
@@ -386,18 +383,14 @@ discover_new_apps() {
       fi
       local gh_repos
       gh_repos=$(cat "${disc_body_tmp}" 2>/dev/null || echo "[]")
-      rm -f "${disc_hdr_tmp}" "${disc_body_tmp}" 2>/dev/null || true
       if [ -n "${gh_repos}" ] && [ "${gh_repos}" != "[]" ]; then
-        local repo_apps
-        repo_apps=$(echo "${gh_repos}" | jq -r '.[]? | select(.name | test("^[a-z]+craft$|^craft-anything$")) | select(.name | test("^(artcraft|crafthub)$") | not) | .name' 2>/dev/null || true)
         while IFS= read -r app || [ -n "$app" ]; do
           [[ -z "$app" ]] && continue
           candidates+=("${app}")
-        done <<< "${repo_apps}"
+        done < <(echo "${gh_repos}" | jq -r '.[]? | select(.name | test("^[a-z]+craft$|^craft-anything$")) | select(.name | test("^(artcraft|crafthub)$") | not) | .name' 2>/dev/null || true)
       fi
-    else
-      rm -f "${disc_hdr_tmp}" "${disc_body_tmp}" 2>/dev/null || true
     fi
+    rm -f "${disc_hdr_tmp}" "${disc_body_tmp}" 2>/dev/null || true
   fi
 
   # Deduplicate candidate apps
@@ -551,8 +544,9 @@ sync_releases() {
     fi
 
     local api_url="https://api.github.com/repos/${repo_path}/releases/latest"
-    local hdr_tmp="/tmp/gh_hdr_${reponame}_$$.tmp"
-    local body_tmp="/tmp/gh_body_${reponame}_$$.tmp"
+    local hdr_tmp body_tmp
+    hdr_tmp=$(mktemp "/tmp/gh_hdr_${reponame}.XXXXXX")
+    body_tmp=$(mktemp "/tmp/gh_body_${reponame}.XXXXXX")
 
     local http_code
     http_code=$(curl -s --max-time 10 \
@@ -594,8 +588,12 @@ sync_releases() {
     # If GitHub API is rate-limited, fallback to web HTML release check (zero rate-limit)
     if [ "${is_rl}" = true ]; then
       echo "  [INFO] GitHub API rate-limited for ${repo_path}. Checking web release fallback..."
-      local web_tag
-      web_tag=$(curl -sI --max-time 10 "https://github.com/${repo_path}/releases/latest" 2>/dev/null | grep -i '^location:' | tail -n 1 | sed -nE 's|^[Ll]ocation:.*\/tag\/([^/?#\r\n]+).*|\1|p' | tr -d '\r\n')
+      local web_loc
+      web_loc=$(curl -sI --max-time 10 "https://github.com/${repo_path}/releases/latest" 2>/dev/null | grep -i '^location:' || true)
+      local web_tag=""
+      if [ -n "${web_loc}" ]; then
+        web_tag=$(echo "${web_loc}" | tail -n 1 | sed -nE 's|^[Ll]ocation:.*\/tag\/([^/?#\r\n]+).*|\1|p' | tr -d '\r\n' || true)
+      fi
 
       if [ -n "${web_tag}" ]; then
         local tag_dir="${releases_dir}/${web_tag}"
@@ -610,12 +608,20 @@ sync_releases() {
         fi
 
         # New or missing version: resolve web zip asset URL via expanded_assets HTML
-        local web_asset_rel
-        web_asset_rel=$(curl -sfL --max-time 15 "https://github.com/${repo_path}/releases/expanded_assets/${web_tag}" 2>/dev/null | grep -oiE '/[A-Za-z0-9_-]+/[A-Za-z0-9_-]+/releases/download/[^"'\''<>]+web[^"'\''<>]+\.zip' | head -n 1 || true)
+        local assets_html
+        assets_html=$(curl -sfL --max-time 15 "https://github.com/${repo_path}/releases/expanded_assets/${web_tag}" 2>/dev/null || true)
+        local web_asset_rel=""
+        if [ -n "${assets_html}" ]; then
+          web_asset_rel=$(echo "${assets_html}" | grep -oiE '/[A-Za-z0-9_-]+/[A-Za-z0-9_-]+/releases/download/[^"'\''<>]+web[^"'\''<>]+\.zip' | head -n 1 || true)
+        fi
         if [ -n "${web_asset_rel}" ]; then
           tag="${web_tag}"
           download_url="https://github.com${web_asset_rel}"
+        else
+          echo "  [WARN] Web fallback: no matching web zip asset found in expanded_assets for ${repo_path}@${web_tag}"
         fi
+      else
+        echo "  [WARN] Web fallback: unable to resolve release tag from redirect for ${repo_path}"
       fi
 
       if [ -z "${download_url}" ] && [ -z "${tag}" ]; then
@@ -679,8 +685,9 @@ sync_releases() {
     fi
 
     echo "  Downloading: ${download_url}"
-    local tmp_zip="/tmp/${reponame}_$$.zip"
-    local tmp_extract="/tmp/${reponame}_$$_extract"
+    local tmp_zip tmp_extract
+    tmp_zip=$(mktemp "/tmp/${reponame}.XXXXXX.zip")
+    tmp_extract=$(mktemp -d "/tmp/${reponame}_extract.XXXXXX")
     rm -rf "${tmp_zip}" "${tmp_extract}"
     mkdir -p "${tmp_extract}" "${releases_dir}"
 
@@ -696,7 +703,7 @@ sync_releases() {
       if [ "${n_dirs}" -eq 1 ] && [ "${n_files}" -eq 0 ]; then
         local subdir
         subdir=$(find "${tmp_extract}" -mindepth 1 -maxdepth 1 -type d | head -n 1)
-        cp -rT "${subdir}" "${tag_dir}/"
+        cp -r "${subdir}"/. "${tag_dir}/"
       else
         cp -r "${tmp_extract}"/. "${tag_dir}/"
       fi
@@ -759,7 +766,6 @@ sync_releases() {
     '{status: $status, last_sync: $last_sync, last_success: $last_success, rate_limited: $rate_limited, last_error: $last_error, discovered_count: $discovered_count}' \
     > "${tmp_status}" 2>/dev/null || true
   mv -f "${tmp_status}" "${TARGET_DIR}/.sync_status.json" 2>/dev/null || true
-  rm -f "${SYNC_LOCK}" 2>/dev/null || true
 
   echo "[$(date -u +'%Y-%m-%d %H:%M:%SZ')] Sync complete."
 }
