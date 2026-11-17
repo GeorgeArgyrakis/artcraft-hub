@@ -275,59 +275,33 @@ sync_app_preview() {
 # ---------------------------------------------------------------------------
 get_app_metadata() {
   local app="$1"
-  local title=""
-  local category=""
-  local categoryTag=""
-  local accentColor=""
-  local tagline=""
-  local desc=""
-  local webReady=true
+  local clean_title
+  clean_title=$(echo "${app}" | sed -E 's/[-_]/ /g' | awk '{for(i=1;i<=NF;i++)$i=toupper(substr($i,1,1)) substr($i,2)}1' 2>/dev/null || echo "${app}")
+  if [ -z "${clean_title}" ]; then
+    clean_title="${app}"
+  fi
+  clean_title=$(echo "${clean_title}" | sed 's/craft$/Craft/')
 
-  case "${app}" in
-    anicraft)
-      title="AniCraft"
-      category="Graphics & Photo"
-      categoryTag="2D ANIMATION & TIMELINE"
-      accentColor="#a855f7"
-      tagline="2D Vector Animation Studio"
-      desc="Open-source 2D animation, vector tweens, and interactive timelines."
-      webReady=false
-      ;;
-    materialcraft)
-      title="MaterialCraft"
-      category="3D & CAD"
-      categoryTag="PROCEDURAL MATERIAL STUDIO"
-      accentColor="#e11d48"
-      tagline="Procedural PBR Material Authoring"
-      desc="Open-source procedural PBR material designer and shader authoring in pure Rust."
-      webReady=true
-      ;;
-    solidcraft)
-      title="SolidCraft"
-      category="3D & CAD"
-      categoryTag="SOLID MODELING"
-      accentColor="#0284c7"
-      tagline="Parametric Solid Modeling"
-      desc="Open-source boundary representation and parametric solid modeling engine."
-      webReady=true
-      ;;
-    *)
-      # Fallback heuristic: clean title without broken sed escapes
-      title=$(echo "${app}" | awk -F'[-_]' '{for(i=1;i<=NF;i++)$i=toupper(substr($i,1,1)) substr($i,2)}1' OFS='' 2>/dev/null || echo "${app}")
-      if [ -z "${title}" ]; then
-        title="${app}"
-      fi
-      category="Graphics & Photo"
-      categoryTag="CREATIVE STUDIO"
-      accentColor="#4f46e5"
-      tagline="${title} Studio App"
-      desc="Open-source ${title} creative application."
-      webReady=false
-      ;;
-  esac
+  local category="Graphics & Photo"
+  local categoryTag="$(echo "${clean_title}" | tr '[:lower:]' '[:upper:]') STUDIO"
+  local accentColor="#4f46e5"
+  local tagline="Open-source ${clean_title} creative application."
+  local desc="Open-source ${clean_title} creative application built with WebAssembly."
+  local webReady=true
 
   jq -n \
     --arg app "${app}" \
+    --arg repo "storytold/${app}" \
+    --arg title "${clean_title}" \
+    --arg category "${category}" \
+    --arg categoryTag "${categoryTag}" \
+    --arg accentColor "${accentColor}" \
+    --arg tagline "${tagline}" \
+    --arg desc "${desc}" \
+    --argjson visible true \
+    --argjson webReady "${webReady}" \
+    '{app: $app, repo: $repo, title: $title, category: $category, categoryTag: $categoryTag, accentColor: $accentColor, tagline: $tagline, desc: $desc, visible: $visible, webReady: $webReady}'
+}
     --arg repo "storytold/${app}" \
     --arg title "${title}" \
     --arg category "${category}" \
@@ -467,10 +441,10 @@ discover_new_apps() {
 
       if [ "${is_wr}" = "true" ]; then
         echo "  [DISCOVER] ${app} identified (WebAssembly release available!)"
+        discovered_json=$(jq -n --argjson list "${discovered_json}" --argjson item "${meta}" '$list + [$item]')
       else
-        echo "  [DISCOVER] ${app} identified (desktop-only upstream; WebAssembly build in development)"
+        echo "  [DISCOVER] ${app} skipped (desktop-only upstream; WebAssembly build in development)"
       fi
-      discovered_json=$(jq -n --argjson list "${discovered_json}" --argjson item "${meta}" '$list + [$item]')
     done
     echo "${discovered_json}" > "${discovered_file}" 2>/dev/null || true
   else

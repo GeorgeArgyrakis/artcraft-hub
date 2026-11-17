@@ -645,23 +645,84 @@ class TestAppDiscovery(unittest.TestCase):
         on_disk = switch_api.read_json(switch_api.DISCOVERED_APPS_FILE)
         self.assertEqual([a["app"] for a in on_disk], ["materialcraft"])
 
-    def test_discover_upstream_identifies_anicraft_with_web_ready_false(self):
+    def test_discover_upstream_skips_non_web_ready_apps_and_includes_web_ready(self):
         from unittest.mock import patch, MagicMock
         mock_html = '<link rel="preload" href="/images/apps/anicraft/icon.webp" as="image"/><link rel="preload" href="/images/apps/materialcraft/icon.webp" as="image"/>'
-        with patch("urllib.request.urlopen") as mock_urlopen:
+
+        def mock_web_ready(slug):
+            return slug == "materialcraft"
+
+        with patch("urllib.request.urlopen") as mock_urlopen, \
+             patch("switch_api.check_upstream_web_ready", side_effect=mock_web_ready):
             mock_resp = MagicMock()
             mock_resp.read.return_value = mock_html.encode("utf-8")
             mock_resp.__enter__.return_value = mock_resp
             mock_urlopen.return_value = mock_resp
 
             discovered = switch_api.discover_upstream_apps()
-            disc_map = {d["app"]: d for d in discovered}
-            # Both apps are identified on sync
-            self.assertIn("materialcraft", disc_map)
-            self.assertTrue(disc_map["materialcraft"].get("webReady", True))
-            self.assertIn("anicraft", disc_map)
-            # anicraft is identified, but flagged webReady=False (no wasm version yet)
-            self.assertFalse(disc_map["anicraft"].get("webReady", True))
+            disc_slugs = [d["app"] for d in discovered]
+
+            # materialcraft is web-ready -> included in discovered
+            self.assertIn("materialcraft", disc_slugs)
+            # anicraft lacks web build -> automatically skipped
+            self.assertNotIn("anicraft", disc_slugs)
+
+    def test_catalog_merging_bundled_and_user_overrides(self):
+        master_content = {
+            "photocraft": {
+                "repo": "storytold/photocraft",
+                "title": "PhotoCraft Master",
+                "category": "Graphics & Photo",
+                "accentColor": "#2563eb",
+            },
+            "vectorcraft": {
+                "repo": "storytold/vectorcraft",
+                "title": "VectorCraft",
+                "category": "Vector & Design",
+            }
+        }
+        user_content = {
+            "photocraft": {
+                "title": "PhotoCraft Custom",
+                "accentColor": "#ff0000",
+            },
+            "customcraft": {
+                "repo": "user/customcraft",
+                "title": "CustomCraft",
+                "category": "3D & CAD",
+            }
+        }
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            master_file = Path(tmp_dir) / "bundled.json"
+            user_file = Path(tmp_dir) / "user.json"
+            switch_api.write_json(master_file, master_content)
+            switch_api.write_json(user_file, user_content)
+
+            orig_bundled = switch_api.BUNDLED_CATALOG_FILE
+            orig_user = switch_api.CATALOG_FILE
+            try:
+                switch_api.BUNDLED_CATALOG_FILE = master_file
+                switch_api.CATALOG_FILE = user_file
+
+                combined = switch_api.get_catalog()
+
+                # Bundled vectorcraft is preserved
+                self.assertIn("vectorcraft", combined)
+                self.assertEqual(combined["vectorcraft"]["title"], "VectorCraft")
+
+                # User customcraft is merged in
+                self.assertIn("customcraft", combined)
+                self.assertEqual(combined["customcraft"]["title"], "CustomCraft")
+
+                # User overrides on photocraft take precedence while preserving untouched default fields (repo)
+                self.assertIn("photocraft", combined)
+                self.assertEqual(combined["photocraft"]["title"], "PhotoCraft Custom")
+                self.assertEqual(combined["photocraft"]["accentColor"], "#ff0000")
+                self.assertEqual(combined["photocraft"]["repo"], "storytold/photocraft")
+            finally:
+                switch_api.BUNDLED_CATALOG_FILE = orig_bundled
+                switch_api.CATALOG_FILE = orig_user
 
     def test_upstream_web_ready_dynamic_detection(self):
         import urllib.error

@@ -590,13 +590,33 @@ def trigger_sync(app_key: Optional[str] = None) -> Tuple[Dict[str, Any], int]:
 
 
 def get_catalog() -> Dict[str, Any]:
-    """Return catalog dictionary from user config, bundled share, or local repository."""
-    for path in (CATALOG_FILE, BUNDLED_CATALOG_FILE, LOCAL_CATALOG_FILE):
-        if path.is_file():
-            data = read_json(path)
+    """
+    Return combined catalog dictionary. 
+    Merges bundled container defaults with the user's persistent /config/catalog.json 
+    to guarantee backward compatibility for existing installations.
+    """
+    master_catalog = {}
+    for default_path in (BUNDLED_CATALOG_FILE, LOCAL_CATALOG_FILE):
+        if default_path.is_file():
+            data = read_json(default_path)
             if isinstance(data, dict):
-                return data
-    return {}
+                master_catalog.update(data)
+                break
+
+    user_catalog = {}
+    if CATALOG_FILE.is_file():
+        data = read_json(CATALOG_FILE)
+        if isinstance(data, dict):
+            user_catalog = data
+
+    combined_catalog = dict(master_catalog)
+    for app_key, meta in user_catalog.items():
+        if app_key in combined_catalog and isinstance(combined_catalog[app_key], dict) and isinstance(meta, dict):
+            combined_catalog[app_key] = {**combined_catalog[app_key], **meta}
+        else:
+            combined_catalog[app_key] = meta
+
+    return combined_catalog
 
 
 def get_catalog_write_path() -> Path:
@@ -776,37 +796,6 @@ def resolve_app_preview(app_name: str) -> Optional[str]:
     return None
 
 
-KNOWN_APP_METADATA: Dict[str, Dict[str, Any]] = {
-    "anicraft": {
-        "title": "AniCraft",
-        "category": "Graphics & Photo",
-        "categoryTag": "2D ANIMATION & TIMELINE",
-        "accentColor": "#a855f7",
-        "tagline": "2D Vector Animation Studio",
-        "desc": "Open-source 2D animation, vector tweens, and interactive timelines.",
-        "webReady": False,  # Upstream is developing WebAssembly build; desktop-only currently
-    },
-    "materialcraft": {
-        "title": "MaterialCraft",
-        "category": "3D & CAD",
-        "categoryTag": "PROCEDURAL MATERIAL STUDIO",
-        "accentColor": "#e11d48",
-        "tagline": "Procedural PBR Material Authoring",
-        "desc": "Open-source procedural PBR material designer and shader authoring in pure Rust.",
-        "webReady": True,
-    },
-    "solidcraft": {
-        "title": "SolidCraft",
-        "category": "3D & CAD",
-        "categoryTag": "SOLID MODELING",
-        "accentColor": "#0284c7",
-        "tagline": "Parametric Solid Modeling",
-        "desc": "Open-source boundary representation and parametric solid modeling engine.",
-        "webReady": True,
-    },
-}
-
-
 def get_discovered_apps() -> List[Dict[str, Any]]:
     """Return list of discovered upstream ArtCraft apps not yet registered in catalog.json."""
     catalog = get_catalog()
@@ -825,9 +814,7 @@ def get_discovered_apps() -> List[Dict[str, Any]]:
 
 def check_upstream_web_ready(slug: str) -> bool:
     """
-    Check if upstream GitHub repository currently has a WebAssembly release asset (*web*.zip).
-    Generic for any app: queries GitHub releases endpoint dynamically.
-    Falls back to KNOWN_APP_METADATA or False if GitHub cannot be queried.
+    Check if upstream GitHub repository has a WebAssembly release asset (*web*.zip) dynamically.
     """
     try:
         gh_headers = {
@@ -838,6 +825,7 @@ def check_upstream_web_ready(slug: str) -> bool:
         token = os.environ.get("GITHUB_TOKEN", "").strip()
         if token:
             gh_headers["Authorization"] = f"Bearer {token}"
+
         req = urllib.request.Request(
             f"https://api.github.com/repos/storytold/{slug}/releases/latest",
             headers=gh_headers,
@@ -853,14 +841,8 @@ def check_upstream_web_ready(slug: str) -> bool:
                     for a in assets
                     if isinstance(a, dict)
                 )
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            return False
     except Exception:
         pass
-
-    if slug in KNOWN_APP_METADATA:
-        return bool(KNOWN_APP_METADATA[slug].get("webReady", False))
     return False
 
 
@@ -914,37 +896,28 @@ def discover_upstream_apps() -> List[Dict[str, Any]]:
     for slug in sorted(candidate_slugs):
         if slug in catalog:
             continue
-        web_ready = check_upstream_web_ready(slug)
-        if slug in KNOWN_APP_METADATA:
-            m = KNOWN_APP_METADATA[slug]
-            entry = {
-                "app": slug,
-                "repo": f"storytold/{slug}",
-                "title": m["title"],
-                "category": m["category"],
-                "categoryTag": m["categoryTag"],
-                "accentColor": m["accentColor"],
-                "tagline": m["tagline"],
-                "desc": m["desc"],
-                "webReady": web_ready,
-                "visible": True,
-            }
-        else:
-            title = re.sub(r"[-_]", " ", slug).title().replace(" ", "")
-            entry = {
-                "app": slug,
-                "repo": f"storytold/{slug}",
-                "title": title,
-                "category": "Graphics & Photo",
-                "categoryTag": "CREATIVE STUDIO",
-                "accentColor": "#4f46e5",
-                "tagline": f"{title} Studio App",
-                "desc": f"Open-source {title} creative application.",
-                "webReady": web_ready,
-                "visible": True,
-            }
-        entry["icon"] = resolve_app_icon(slug)
-        entry["preview"] = resolve_app_preview(slug)
+
+        if not check_upstream_web_ready(slug):
+            continue  # Automatically skip apps without web builds
+
+        clean_title = re.sub(r"[-_]", " ", slug).title()
+        if clean_title.lower().endswith("craft") and len(clean_title) > 5 and not clean_title.endswith("Craft"):
+            clean_title = clean_title[:-5] + "Craft"
+
+        entry = {
+            "app": slug,
+            "repo": f"storytold/{slug}",
+            "title": clean_title,
+            "category": "Graphics & Photo",
+            "categoryTag": f"{clean_title.upper()} STUDIO",
+            "accentColor": "#4f46e5",
+            "tagline": f"Open-source {clean_title} creative application.",
+            "desc": f"Open-source {clean_title} creative application built with WebAssembly.",
+            "visible": True,
+            "webReady": True,
+            "icon": resolve_app_icon(slug),
+            "preview": resolve_app_preview(slug),
+        }
         discovered.append(entry)
 
     try:
